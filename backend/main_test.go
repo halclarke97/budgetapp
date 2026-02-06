@@ -15,23 +15,7 @@ import (
 func TestExpenseAPIFlow(t *testing.T) {
 	t.Parallel()
 
-	tempDir := t.TempDir()
-	dataPath := filepath.Join(tempDir, "expenses.json")
-	if err := os.WriteFile(dataPath, []byte("[]\n"), 0o644); err != nil {
-		t.Fatalf("write temp data file: %v", err)
-	}
-
-	st, err := NewStore(dataPath)
-	if err != nil {
-		t.Fatalf("create store: %v", err)
-	}
-
-	server := &apiServer{store: st, categories: defaultCategories()}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/expenses", server.handleExpenses)
-	mux.HandleFunc("/api/expenses/", server.handleExpenseByID)
-	mux.HandleFunc("/api/categories", server.handleCategories)
-	mux.HandleFunc("/api/stats", server.handleStats)
+	mux, _ := newTestAPIHandler(t)
 
 	postBody := map[string]any{
 		"amount":   12.5,
@@ -74,6 +58,83 @@ func TestExpenseAPIFlow(t *testing.T) {
 	if len(listAfterDelete) != 0 {
 		t.Fatalf("expected no expenses after delete, got %d", len(listAfterDelete))
 	}
+}
+
+func TestRecurringFlowAPIRegression(t *testing.T) {
+	t.Parallel()
+
+	mux, _ := newTestAPIHandler(t)
+
+	startDate := time.Now().UTC().AddDate(0, 0, -14).Format("2006-01-02")
+	patternReq := map[string]any{
+		"amount":     9.25,
+		"category":   "housing",
+		"note":       "Recurring regression check",
+		"frequency":  "weekly",
+		"start_date": startDate,
+	}
+	pattern := doJSON[RecurringPattern](t, mux, http.MethodPost, "/api/recurring-expenses", patternReq, http.StatusCreated)
+	if pattern.ID == "" {
+		t.Fatal("expected recurring pattern id")
+	}
+
+	expenses := doJSON[[]Expense](t, mux, http.MethodGet, "/api/expenses", nil, http.StatusOK)
+	firstCount := countExpensesForPattern(expenses, pattern.ID)
+	if firstCount < 1 {
+		t.Fatalf("expected generated recurring expenses, got %d", firstCount)
+	}
+
+	expenses = doJSON[[]Expense](t, mux, http.MethodGet, "/api/expenses", nil, http.StatusOK)
+	secondCount := countExpensesForPattern(expenses, pattern.ID)
+	if secondCount != firstCount {
+		t.Fatalf("expected idempotent generation count %d, got %d", firstCount, secondCount)
+	}
+
+	stats := doJSON[Stats](t, mux, http.MethodGet, "/api/stats?period=month", nil, http.StatusOK)
+	if stats.TotalExpenses < firstCount {
+		t.Fatalf("expected stats to include generated recurring expenses; total=%d generated=%d", stats.TotalExpenses, firstCount)
+	}
+
+	upcoming := doJSON[[]UpcomingRecurringOccurrence](t, mux, http.MethodGet, "/api/recurring-expenses/upcoming?days=14", nil, http.StatusOK)
+	if len(upcoming) == 0 {
+		t.Fatal("expected upcoming recurring occurrences")
+	}
+}
+
+func newTestAPIHandler(t *testing.T) (http.Handler, *Store) {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	dataPath := filepath.Join(tempDir, "expenses.json")
+	if err := os.WriteFile(dataPath, []byte("[]\n"), 0o644); err != nil {
+		t.Fatalf("write temp data file: %v", err)
+	}
+
+	st, err := NewStore(dataPath)
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+
+	server := &apiServer{store: st, categories: defaultCategories()}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/expenses", server.handleExpenses)
+	mux.HandleFunc("/api/expenses/", server.handleExpenseByID)
+	mux.HandleFunc("/api/categories", server.handleCategories)
+	mux.HandleFunc("/api/stats", server.handleStats)
+	mux.HandleFunc("/api/recurring-expenses/upcoming", server.handleRecurringUpcoming)
+	mux.HandleFunc("/api/recurring-expenses", server.handleRecurringExpenses)
+	mux.HandleFunc("/api/recurring-expenses/", server.handleRecurringExpenseByID)
+	return mux, st
+}
+
+func countExpensesForPattern(expenses []Expense, patternID string) int {
+	count := 0
+	for _, expense := range expenses {
+		if expense.RecurringPatternID != nil && *expense.RecurringPatternID == patternID {
+			count++
+		}
+	}
+	return count
 }
 
 func doRaw(t *testing.T, handler http.Handler, method, path string, payload any, expectedStatus int) []byte {

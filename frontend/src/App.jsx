@@ -22,6 +22,7 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
   year: 'numeric',
+  timeZone: 'UTC',
 })
 
 const baseForm = {
@@ -252,6 +253,8 @@ export default function App() {
           </div>
           {isLoading ? (
             <p className="text-slate-500">Loading upcoming occurrences...</p>
+          ) : recurringPatterns.length === 0 ? (
+            <p className="text-slate-500">No recurring patterns yet. Upcoming occurrences will appear here.</p>
           ) : upcomingRecurring.length === 0 ? (
             <p className="text-slate-500">No upcoming recurring expenses in the next 30 days.</p>
           ) : (
@@ -271,7 +274,7 @@ export default function App() {
                       key={`${occurrence.pattern_id}-${occurrence.date}`}
                       className="border-b border-slate-100 last:border-b-0"
                     >
-                      <td className="px-3 py-3">{dateFormatter.format(new Date(occurrence.date))}</td>
+                      <td className="px-3 py-3">{formatCalendarDate(occurrence.date)}</td>
                       <td className="px-3 py-3">
                         {categoryMap[occurrence.category]?.name ?? occurrence.category}
                       </td>
@@ -310,7 +313,7 @@ export default function App() {
                   </div>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-slate-500">
-                      Next run: {dateFormatter.format(new Date(pattern.next_run_date))}
+                      Next run: {formatCalendarDate(pattern.next_run_date)}
                     </p>
                     <span
                       className={`rounded-full px-2 py-1 text-xs font-semibold ${
@@ -436,7 +439,7 @@ export default function App() {
               <tbody>
                 {expenses.map((expense) => (
                   <tr key={expense.id} className="border-b border-slate-100">
-                    <td className="px-3 py-3">{dateFormatter.format(new Date(expense.date))}</td>
+                    <td className="px-3 py-3">{formatCalendarDate(expense.date)}</td>
                     <td className="px-3 py-3">{categoryMap[expense.category]?.name ?? expense.category}</td>
                     <td className="px-3 py-3">{expense.note || '-'}</td>
                     <td className="px-3 py-3 text-right font-semibold">{money.format(expense.amount)}</td>
@@ -476,7 +479,7 @@ export default function App() {
                 <p className="font-semibold text-ink">{expense.note || 'Untitled expense'}</p>
                 <p className="text-sm text-slate-500">
                   {categoryMap[expense.category]?.name ?? expense.category} •{' '}
-                  {dateFormatter.format(new Date(expense.date))}
+                  {formatCalendarDate(expense.date)}
                 </p>
               </div>
               <p className="font-semibold">{money.format(expense.amount)}</p>
@@ -777,6 +780,14 @@ function toDateInput(value) {
     return ''
   }
   return date.toISOString().slice(0, 10)
+}
+
+function formatCalendarDate(value) {
+  const dateInput = toDateInput(value)
+  if (!dateInput) {
+    return '-'
+  }
+  return dateFormatter.format(new Date(`${dateInput}T00:00:00Z`))
 }
 
 function formatFrequency(value) {

@@ -191,6 +191,57 @@ func TestCreateExpenseWithRecurringPayload(t *testing.T) {
 	}
 }
 
+func TestRecurringExpenseEndToEndFlowGeneratesAndUpdatesStats(t *testing.T) {
+	t.Parallel()
+
+	_, mux := newTestAPIServer(t)
+
+	const amount = 7.25
+	startDate := time.Now().UTC().AddDate(0, 0, -21).Format("2006-01-02")
+	body := map[string]any{
+		"amount":   amount,
+		"category": "food",
+		"note":     "Weekly coffee",
+		"date":     startDate,
+		"recurring": map[string]any{
+			"enabled":   true,
+			"frequency": "weekly",
+		},
+	}
+	created := doJSON[Expense](t, mux, http.MethodPost, "/api/expenses", body, http.StatusCreated)
+	if created.RecurringPatternID == nil || *created.RecurringPatternID == "" {
+		t.Fatal("expected created expense to include recurring_pattern_id")
+	}
+
+	expenses := doJSON[[]Expense](t, mux, http.MethodGet, "/api/expenses", nil, http.StatusOK)
+	recurringCount := 0
+	uniqueDates := map[string]struct{}{}
+	for _, expense := range expenses {
+		if expense.RecurringPatternID == nil || *expense.RecurringPatternID != *created.RecurringPatternID {
+			continue
+		}
+		recurringCount++
+		dateKey := expense.Date.UTC().Format("2006-01-02")
+		if _, exists := uniqueDates[dateKey]; exists {
+			t.Fatalf("duplicate recurring expense generated for %s", dateKey)
+		}
+		uniqueDates[dateKey] = struct{}{}
+	}
+	if recurringCount != 4 {
+		t.Fatalf("expected 4 weekly recurring expenses in due window, got %d", recurringCount)
+	}
+
+	stats := doJSON[Stats](t, mux, http.MethodGet, "/api/stats?period=month", nil, http.StatusOK)
+	if stats.TotalExpenses != recurringCount {
+		t.Fatalf("expected stats total_expenses %d, got %d", recurringCount, stats.TotalExpenses)
+	}
+
+	expectedTotal := amount * float64(recurringCount)
+	if stats.TotalAmount != expectedTotal {
+		t.Fatalf("expected stats total_amount %.2f, got %.2f", expectedTotal, stats.TotalAmount)
+	}
+}
+
 func TestCreateExpenseWithInvalidRecurringPayloadReturnsBadRequest(t *testing.T) {
 	t.Parallel()
 

@@ -196,6 +196,82 @@ func TestRecurringPatternCRUD(t *testing.T) {
 	assertEnvelopeShape(t, path)
 }
 
+func TestLegacyMigrationRemainsCompatibleWithRecurringOperations(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "expenses.json")
+	blankPatternID := "   "
+	legacyExpense := []Expense{
+		{
+			ID:                 "legacy-compat-1",
+			Amount:             17.5,
+			Category:           "Food",
+			Note:               "Brunch",
+			Date:               time.Date(2026, time.January, 5, 12, 0, 0, 0, time.UTC),
+			CreatedAt:          time.Date(2026, time.January, 5, 12, 5, 0, 0, time.UTC),
+			RecurringPatternID: &blankPatternID,
+		},
+	}
+
+	legacyBytes, err := json.Marshal(legacyExpense)
+	if err != nil {
+		t.Fatalf("marshal legacy expense: %v", err)
+	}
+	if err := os.WriteFile(path, append(legacyBytes, '\n'), 0o644); err != nil {
+		t.Fatalf("write legacy data: %v", err)
+	}
+
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("create store from legacy data: %v", err)
+	}
+
+	expenses := store.List(ExpenseFilter{})
+	if len(expenses) != 1 {
+		t.Fatalf("expected 1 legacy expense, got %d", len(expenses))
+	}
+	if expenses[0].RecurringPatternID != nil {
+		t.Fatalf("expected blank recurring_pattern_id to be normalized to nil, got %+v", expenses[0].RecurringPatternID)
+	}
+
+	start := time.Date(2026, time.January, 12, 12, 0, 0, 0, time.UTC)
+	pattern, err := store.CreateRecurringPattern(RecurringPatternInput{
+		Amount:      9.99,
+		Category:    "shopping",
+		Note:        "Coffee subscription",
+		Frequency:   "weekly",
+		StartDate:   start,
+		NextRunDate: start,
+		Active:      true,
+	})
+	if err != nil {
+		t.Fatalf("create recurring pattern after migration: %v", err)
+	}
+
+	generated, err := store.SweepRecurringExpenses(time.Date(2026, time.January, 26, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("sweep recurring expenses after migration: %v", err)
+	}
+	if generated != 3 {
+		t.Fatalf("expected 3 generated recurring expenses after migration, got %d", generated)
+	}
+
+	reopened, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("reopen migrated store: %v", err)
+	}
+	reopenedPatterns := reopened.ListRecurringPatterns()
+	if len(reopenedPatterns) != 1 || reopenedPatterns[0].ID != pattern.ID {
+		t.Fatalf("expected recurring pattern %q to persist after reopen", pattern.ID)
+	}
+	reopenedExpenses := reopened.List(ExpenseFilter{})
+	if len(reopenedExpenses) != 4 {
+		t.Fatalf("expected 4 total expenses after reopen (1 legacy + 3 generated), got %d", len(reopenedExpenses))
+	}
+
+	assertEnvelopeShape(t, path)
+}
+
 func assertEnvelopeShape(t *testing.T, path string) {
 	t.Helper()
 

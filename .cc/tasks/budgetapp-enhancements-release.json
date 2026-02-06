@@ -1,0 +1,134 @@
+[
+  {
+    "id": "recurring-data-model-and-migration",
+    "title": "Implement recurring data model and storage migration",
+    "description": "Add RecurringPattern model, extend Expense with recurring_pattern_id, and migrate store persistence from legacy []Expense to versioned envelope format.",
+    "acceptance_criteria": [
+      "Store reads both legacy []Expense and versioned envelope JSON formats",
+      "Persisted file includes version, expenses, and recurring_patterns",
+      "Recurring pattern CRUD methods exist in store layer"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#data-model-changes",
+      "#release-plan"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_1-recurring-data-model"
+    }
+  },
+  {
+    "id": "recurring-generation-engine",
+    "title": "Implement recurring generation sweep and scheduling rules",
+    "description": "Build recurring expense auto-generation with weekly/monthly scheduling, idempotency guards, and month-end handling.",
+    "acceptance_criteria": [
+      "Sweep generates all due occurrences up to current date",
+      "No duplicate expenses generated for the same pattern/date",
+      "Monthly recurrence clamps correctly on short months",
+      "Pattern next_run_date advances correctly after generation"
+    ],
+    "depends_on": [
+      "recurring-data-model-and-migration"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#recurrence-engine-rules",
+      "#verification-strategy"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_1-recurring-engine"
+    }
+  },
+  {
+    "id": "recurring-api-endpoints",
+    "title": "Add recurring expense API endpoints and validation",
+    "description": "Implement recurring pattern CRUD endpoints, upcoming occurrences endpoint, and extend POST /api/expenses to support recurring payloads.",
+    "acceptance_criteria": [
+      "GET/POST/PUT/DELETE /api/recurring-expenses endpoints are available",
+      "GET /api/recurring-expenses/upcoming?days=30 returns projected occurrences",
+      "POST /api/expenses accepts recurring payload and creates both initial expense and pattern when enabled",
+      "Invalid recurrence payloads return actionable 400 responses"
+    ],
+    "depends_on": [
+      "recurring-data-model-and-migration",
+      "recurring-generation-engine"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#backend-api-additions-and-changes",
+      "#functional-requirements"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_1-recurring-api"
+    }
+  },
+  {
+    "id": "frontend-recurring-expense-flow",
+    "title": "Add recurring controls to expense creation and editing flow",
+    "description": "Update the expense modal to support recurring toggle, frequency selection, and optional end date; submit payloads to backend APIs.",
+    "acceptance_criteria": [
+      "Expense modal includes recurring toggle and frequency selector",
+      "Optional end date is captured and sent in API payload",
+      "Creating a recurring expense from UI succeeds and refreshes dashboard state",
+      "Validation errors are shown inline when recurrence inputs are invalid"
+    ],
+    "depends_on": [
+      "recurring-api-endpoints"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#frontend-changes",
+      "#functional-requirements"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_1-frontend-expense-flow"
+    }
+  },
+  {
+    "id": "frontend-recurring-management-and-upcoming",
+    "title": "Add recurring pattern management and upcoming dashboard panel",
+    "description": "Implement recurring pattern list/edit/deactivate UI and dashboard panel that displays upcoming recurring occurrences.",
+    "acceptance_criteria": [
+      "User can view all recurring patterns from dashboard",
+      "User can edit or deactivate a recurring pattern from the UI",
+      "Upcoming recurring panel shows next occurrences with date, category, note, and amount",
+      "UI displays sensible empty states when no recurring patterns exist"
+    ],
+    "depends_on": [
+      "recurring-api-endpoints"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#frontend-changes",
+      "#release-plan"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_1-frontend-recurring-dashboard"
+    }
+  },
+  {
+    "id": "recurring-regression-and-harness-verification",
+    "title": "Add recurrence regression tests and harness verification updates",
+    "description": "Expand backend tests and harness checks for recurrence generation, idempotency, migration compatibility, and end-to-end recurring flow.",
+    "acceptance_criteria": [
+      "Backend tests cover weekly and monthly generation with edge cases",
+      "Legacy data migration behavior is covered by automated tests",
+      "Existing CRUD/stats regression tests continue to pass",
+      "Harness includes a recurring flow verification scenario"
+    ],
+    "depends_on": [
+      "recurring-generation-engine",
+      "recurring-api-endpoints",
+      "frontend-recurring-expense-flow",
+      "frontend-recurring-management-and-upcoming"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#verification-strategy",
+      "#risks-and-mitigations"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_1-regression-harness"
+    }
+  }
+]

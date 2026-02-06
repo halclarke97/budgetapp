@@ -3,12 +3,27 @@ package main
 import "time"
 
 type Expense struct {
-	ID        string    `json:"id"`
-	Amount    float64   `json:"amount"`
-	Category  string    `json:"category"`
-	Note      string    `json:"note"`
-	Date      time.Time `json:"date"`
-	CreatedAt time.Time `json:"created_at"`
+	ID                 string    `json:"id"`
+	Amount             float64   `json:"amount"`
+	Category           string    `json:"category"`
+	Note               string    `json:"note"`
+	Date               time.Time `json:"date"`
+	CreatedAt          time.Time `json:"created_at"`
+	RecurringPatternID *string   `json:"recurring_pattern_id,omitempty"`
+}
+
+type RecurringPattern struct {
+	ID          string     `json:"id"`
+	Amount      float64    `json:"amount"`
+	Category    string     `json:"category"`
+	Note        string     `json:"note"`
+	Frequency   string     `json:"frequency"`
+	StartDate   time.Time  `json:"start_date"`
+	NextRunDate time.Time  `json:"next_run_date"`
+	EndDate     *time.Time `json:"end_date,omitempty"`
+	Active      bool       `json:"active"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type Category struct {

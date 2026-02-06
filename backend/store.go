@@ -14,7 +14,13 @@ import (
 	"time"
 )
 
-var ErrNotFound = errors.New("expense not found")
+var (
+	ErrNotFound                 = errors.New("expense not found")
+	ErrRecurringPatternNotFound = errors.New("recurring pattern not found")
+	ErrInvalidRecurringPattern  = errors.New("invalid recurring pattern")
+)
+
+const storeDataVersion = 2
 
 type ExpenseFilter struct {
 	Category string
@@ -29,10 +35,28 @@ type ExpenseInput struct {
 	Date     time.Time
 }
 
+type RecurringPatternInput struct {
+	Amount      float64
+	Category    string
+	Note        string
+	Frequency   string
+	StartDate   time.Time
+	NextRunDate time.Time
+	EndDate     *time.Time
+	Active      bool
+}
+
+type storeEnvelope struct {
+	Version           int                `json:"version"`
+	Expenses          []Expense          `json:"expenses"`
+	RecurringPatterns []RecurringPattern `json:"recurring_patterns"`
+}
+
 type Store struct {
-	mu       sync.RWMutex
-	filePath string
-	expenses []Expense
+	mu                sync.RWMutex
+	filePath          string
+	expenses          []Expense
+	recurringPatterns []RecurringPattern
 }
 
 func NewStore(path string) (*Store, error) {
@@ -40,7 +64,7 @@ func NewStore(path string) (*Store, error) {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		if err := os.WriteFile(path, []byte("[]\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, emptyStoreEnvelopeJSON(), 0o644); err != nil {
 			return nil, fmt.Errorf("initialize data file: %w", err)
 		}
 	}
@@ -60,19 +84,47 @@ func (s *Store) load() error {
 	if err != nil {
 		return fmt.Errorf("read data file: %w", err)
 	}
-	if len(data) == 0 {
+	if len(strings.TrimSpace(string(data))) == 0 {
 		s.expenses = []Expense{}
+		s.recurringPatterns = []RecurringPattern{}
 		return nil
 	}
 
-	var expenses []Expense
-	if err := json.Unmarshal(data, &expenses); err != nil {
-		return fmt.Errorf("parse data file: %w", err)
+	trimmed := strings.TrimSpace(string(data))
+	loadedLegacyFormat := false
+	switch trimmed[0] {
+	case '[':
+		var expenses []Expense
+		if err := json.Unmarshal(data, &expenses); err != nil {
+			return fmt.Errorf("parse legacy data file: %w", err)
+		}
+		normalizeExpenses(expenses)
+		s.expenses = expenses
+		s.recurringPatterns = []RecurringPattern{}
+		loadedLegacyFormat = true
+	case '{':
+		var envelope storeEnvelope
+		if err := json.Unmarshal(data, &envelope); err != nil {
+			return fmt.Errorf("parse data file envelope: %w", err)
+		}
+		if envelope.Expenses == nil {
+			envelope.Expenses = []Expense{}
+		}
+		if envelope.RecurringPatterns == nil {
+			envelope.RecurringPatterns = []RecurringPattern{}
+		}
+		normalizeExpenses(envelope.Expenses)
+		normalizeRecurringPatterns(envelope.RecurringPatterns)
+		s.expenses = envelope.Expenses
+		s.recurringPatterns = envelope.RecurringPatterns
+	default:
+		return fmt.Errorf("parse data file: unsupported JSON format")
 	}
-	for i := range expenses {
-		expenses[i].Category = normalizeStoreCategory(expenses[i].Category)
+	if loadedLegacyFormat {
+		if err := s.persistLocked(); err != nil {
+			return fmt.Errorf("migrate legacy data file: %w", err)
+		}
 	}
-	s.expenses = expenses
 	return nil
 }
 
@@ -221,8 +273,93 @@ func (s *Store) Stats(period string, now time.Time) Stats {
 	return stats
 }
 
+func (s *Store) ListRecurringPatterns() []RecurringPattern {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]RecurringPattern, len(s.recurringPatterns))
+	copy(result, s.recurringPatterns)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	return result
+}
+
+func (s *Store) GetRecurringPattern(id string) (RecurringPattern, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, pattern := range s.recurringPatterns {
+		if pattern.ID == id {
+			return pattern, nil
+		}
+	}
+	return RecurringPattern{}, ErrRecurringPatternNotFound
+}
+
+func (s *Store) CreateRecurringPattern(input RecurringPatternInput) (RecurringPattern, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pattern, err := recurringPatternFromInput("", time.Time{}, input)
+	if err != nil {
+		return RecurringPattern{}, err
+	}
+	now := time.Now().UTC()
+	pattern.ID = newID()
+	pattern.CreatedAt = now
+	pattern.UpdatedAt = now
+
+	s.recurringPatterns = append(s.recurringPatterns, pattern)
+	if err := s.persistLocked(); err != nil {
+		return RecurringPattern{}, err
+	}
+	return pattern, nil
+}
+
+func (s *Store) UpdateRecurringPattern(id string, input RecurringPatternInput) (RecurringPattern, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, existing := range s.recurringPatterns {
+		if existing.ID != id {
+			continue
+		}
+		updated, err := recurringPatternFromInput(existing.ID, existing.CreatedAt, input)
+		if err != nil {
+			return RecurringPattern{}, err
+		}
+		updated.UpdatedAt = time.Now().UTC()
+		s.recurringPatterns[i] = updated
+		if err := s.persistLocked(); err != nil {
+			return RecurringPattern{}, err
+		}
+		return updated, nil
+	}
+	return RecurringPattern{}, ErrRecurringPatternNotFound
+}
+
+func (s *Store) DeleteRecurringPattern(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, pattern := range s.recurringPatterns {
+		if pattern.ID != id {
+			continue
+		}
+		s.recurringPatterns = append(s.recurringPatterns[:i], s.recurringPatterns[i+1:]...)
+		return s.persistLocked()
+	}
+	return ErrRecurringPatternNotFound
+}
+
 func (s *Store) persistLocked() error {
-	data, err := json.MarshalIndent(s.expenses, "", "  ")
+	envelope := storeEnvelope{
+		Version:           storeDataVersion,
+		Expenses:          s.expenses,
+		RecurringPatterns: s.recurringPatterns,
+	}
+	data, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal data: %w", err)
 	}
@@ -250,6 +387,95 @@ func normalizeStoreCategory(category string) string {
 		return "other"
 	}
 	return cat
+}
+
+func normalizeRecurringFrequency(frequency string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(frequency))
+	switch normalized {
+	case "weekly", "monthly":
+		return normalized, nil
+	case "":
+		return "", fmt.Errorf("%w: frequency is required", ErrInvalidRecurringPattern)
+	default:
+		return "", fmt.Errorf("%w: unsupported frequency %q", ErrInvalidRecurringPattern, frequency)
+	}
+}
+
+func recurringPatternFromInput(id string, createdAt time.Time, input RecurringPatternInput) (RecurringPattern, error) {
+	frequency, err := normalizeRecurringFrequency(input.Frequency)
+	if err != nil {
+		return RecurringPattern{}, err
+	}
+	if input.Amount <= 0 {
+		return RecurringPattern{}, fmt.Errorf("%w: amount must be greater than zero", ErrInvalidRecurringPattern)
+	}
+
+	now := time.Now().UTC()
+	startDate := input.StartDate.UTC()
+	if startDate.IsZero() {
+		startDate = now
+	}
+	nextRunDate := input.NextRunDate.UTC()
+	if nextRunDate.IsZero() {
+		nextRunDate = startDate
+	}
+
+	var endDate *time.Time
+	if input.EndDate != nil {
+		end := input.EndDate.UTC()
+		endDate = &end
+	}
+
+	return RecurringPattern{
+		ID:          id,
+		Amount:      input.Amount,
+		Category:    normalizeStoreCategory(input.Category),
+		Note:        strings.TrimSpace(input.Note),
+		Frequency:   frequency,
+		StartDate:   startDate,
+		NextRunDate: nextRunDate,
+		EndDate:     endDate,
+		Active:      input.Active,
+		CreatedAt:   createdAt,
+	}, nil
+}
+
+func normalizeExpenses(expenses []Expense) {
+	for i := range expenses {
+		expenses[i].Category = normalizeStoreCategory(expenses[i].Category)
+		if expenses[i].RecurringPatternID != nil {
+			recurringPatternID := strings.TrimSpace(*expenses[i].RecurringPatternID)
+			if recurringPatternID == "" {
+				expenses[i].RecurringPatternID = nil
+				continue
+			}
+			expenses[i].RecurringPatternID = &recurringPatternID
+		}
+	}
+}
+
+func normalizeRecurringPatterns(patterns []RecurringPattern) {
+	for i := range patterns {
+		patterns[i].Category = normalizeStoreCategory(patterns[i].Category)
+		patterns[i].Note = strings.TrimSpace(patterns[i].Note)
+		patterns[i].Frequency = strings.ToLower(strings.TrimSpace(patterns[i].Frequency))
+		if patterns[i].EndDate != nil {
+			end := patterns[i].EndDate.UTC()
+			patterns[i].EndDate = &end
+		}
+	}
+}
+
+func emptyStoreEnvelopeJSON() []byte {
+	data, err := json.MarshalIndent(storeEnvelope{
+		Version:           storeDataVersion,
+		Expenses:          []Expense{},
+		RecurringPatterns: []RecurringPattern{},
+	}, "", "  ")
+	if err != nil {
+		return []byte("{}\n")
+	}
+	return append(data, '\n')
 }
 
 func startForPeriod(period string, now time.Time) time.Time {

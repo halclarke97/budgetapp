@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -84,28 +85,31 @@ func (s *Store) load() error {
 	if err != nil {
 		return fmt.Errorf("read data file: %w", err)
 	}
-	if len(strings.TrimSpace(string(data))) == 0 {
+
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
 		s.expenses = []Expense{}
 		s.recurringPatterns = []RecurringPattern{}
 		return nil
 	}
 
-	trimmed := strings.TrimSpace(string(data))
 	loadedLegacyFormat := false
 	switch trimmed[0] {
 	case '[':
 		var expenses []Expense
-		if err := json.Unmarshal(data, &expenses); err != nil {
+		if err := json.Unmarshal(trimmed, &expenses); err != nil {
 			return fmt.Errorf("parse legacy data file: %w", err)
 		}
-		normalizeExpenses(expenses)
+		for i := range expenses {
+			normalizeLoadedExpense(&expenses[i])
+		}
 		s.expenses = expenses
 		s.recurringPatterns = []RecurringPattern{}
 		loadedLegacyFormat = true
 	case '{':
 		var envelope storeEnvelope
-		if err := json.Unmarshal(data, &envelope); err != nil {
-			return fmt.Errorf("parse data file envelope: %w", err)
+		if err := json.Unmarshal(trimmed, &envelope); err != nil {
+			return fmt.Errorf("parse data file: %w", err)
 		}
 		if envelope.Expenses == nil {
 			envelope.Expenses = []Expense{}
@@ -113,13 +117,18 @@ func (s *Store) load() error {
 		if envelope.RecurringPatterns == nil {
 			envelope.RecurringPatterns = []RecurringPattern{}
 		}
-		normalizeExpenses(envelope.Expenses)
-		normalizeRecurringPatterns(envelope.RecurringPatterns)
+		for i := range envelope.Expenses {
+			normalizeLoadedExpense(&envelope.Expenses[i])
+		}
+		for i := range envelope.RecurringPatterns {
+			normalizeLoadedPattern(&envelope.RecurringPatterns[i])
+		}
 		s.expenses = envelope.Expenses
 		s.recurringPatterns = envelope.RecurringPatterns
 	default:
-		return fmt.Errorf("parse data file: unsupported JSON format")
+		return errors.New("data file must be JSON object or array")
 	}
+
 	if loadedLegacyFormat {
 		if err := s.persistLocked(); err != nil {
 			return fmt.Errorf("migrate legacy data file: %w", err)
@@ -285,18 +294,6 @@ func (s *Store) ListRecurringPatterns() []RecurringPattern {
 	return result
 }
 
-func (s *Store) GetRecurringPattern(id string) (RecurringPattern, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, pattern := range s.recurringPatterns {
-		if pattern.ID == id {
-			return pattern, nil
-		}
-	}
-	return RecurringPattern{}, ErrRecurringPatternNotFound
-}
-
 func (s *Store) CreateRecurringPattern(input RecurringPatternInput) (RecurringPattern, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -315,6 +312,18 @@ func (s *Store) CreateRecurringPattern(input RecurringPatternInput) (RecurringPa
 		return RecurringPattern{}, err
 	}
 	return pattern, nil
+}
+
+func (s *Store) GetRecurringPattern(id string) (RecurringPattern, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, pattern := range s.recurringPatterns {
+		if pattern.ID == id {
+			return pattern, nil
+		}
+	}
+	return RecurringPattern{}, ErrRecurringPatternNotFound
 }
 
 func (s *Store) UpdateRecurringPattern(id string, input RecurringPatternInput) (RecurringPattern, error) {
@@ -336,6 +345,7 @@ func (s *Store) UpdateRecurringPattern(id string, input RecurringPatternInput) (
 		}
 		return updated, nil
 	}
+
 	return RecurringPattern{}, ErrRecurringPatternNotFound
 }
 
@@ -350,7 +360,106 @@ func (s *Store) DeleteRecurringPattern(id string) error {
 		s.recurringPatterns = append(s.recurringPatterns[:i], s.recurringPatterns[i+1:]...)
 		return s.persistLocked()
 	}
+
 	return ErrRecurringPatternNotFound
+}
+
+func (s *Store) SweepRecurringExpenses(now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	cutoff := endOfDay(now)
+
+	occurrences := make(map[string]struct{}, len(s.expenses))
+	for _, expense := range s.expenses {
+		if expense.RecurringPatternID == nil || *expense.RecurringPatternID == "" {
+			continue
+		}
+		occurrences[recurrenceOccurrenceKey(*expense.RecurringPatternID, expense.Date)] = struct{}{}
+	}
+
+	generated := 0
+	changed := false
+
+	for i := range s.recurringPatterns {
+		pattern := &s.recurringPatterns[i]
+		if !pattern.Active {
+			continue
+		}
+
+		frequency := normalizeFrequency(pattern.Frequency)
+		if frequency == "" {
+			continue
+		}
+		if pattern.Frequency != frequency {
+			pattern.Frequency = frequency
+			pattern.UpdatedAt = now
+			changed = true
+		}
+
+		next := pattern.NextRunDate.UTC()
+		if next.IsZero() {
+			next = pattern.StartDate.UTC()
+			if next.IsZero() {
+				continue
+			}
+			pattern.NextRunDate = next
+			pattern.UpdatedAt = now
+			changed = true
+		}
+
+		anchorDay := pattern.StartDate.Day()
+		if anchorDay < 1 {
+			anchorDay = next.Day()
+		}
+
+		for !next.After(cutoff) {
+			if pattern.EndDate != nil && next.After(endOfDay(pattern.EndDate.UTC())) {
+				break
+			}
+
+			occurrenceKey := recurrenceOccurrenceKey(pattern.ID, next)
+			if _, exists := occurrences[occurrenceKey]; !exists {
+				patternID := pattern.ID
+				s.expenses = append(s.expenses, Expense{
+					ID:                 newID(),
+					Amount:             pattern.Amount,
+					Category:           normalizeStoreCategory(pattern.Category),
+					Note:               strings.TrimSpace(pattern.Note),
+					Date:               next,
+					CreatedAt:          now,
+					RecurringPatternID: &patternID,
+				})
+				occurrences[occurrenceKey] = struct{}{}
+				generated++
+				changed = true
+			}
+
+			advanced, ok := advanceRecurringDate(next, frequency, anchorDay)
+			if !ok || !advanced.After(next) {
+				break
+			}
+			next = advanced
+			if !pattern.NextRunDate.Equal(next) {
+				pattern.NextRunDate = next
+				pattern.UpdatedAt = now
+				changed = true
+			}
+		}
+	}
+
+	if !changed {
+		return generated, nil
+	}
+	if err := s.persistLocked(); err != nil {
+		return generated, err
+	}
+	return generated, nil
 }
 
 func (s *Store) persistLocked() error {
@@ -359,6 +468,7 @@ func (s *Store) persistLocked() error {
 		Expenses:          s.expenses,
 		RecurringPatterns: s.recurringPatterns,
 	}
+
 	data, err := json.MarshalIndent(envelope, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal data: %w", err)
@@ -401,6 +511,14 @@ func normalizeRecurringFrequency(frequency string) (string, error) {
 	}
 }
 
+func normalizeFrequency(frequency string) string {
+	normalized, err := normalizeRecurringFrequency(frequency)
+	if err != nil {
+		return ""
+	}
+	return normalized
+}
+
 func recurringPatternFromInput(id string, createdAt time.Time, input RecurringPatternInput) (RecurringPattern, error) {
 	frequency, err := normalizeRecurringFrequency(input.Frequency)
 	if err != nil {
@@ -440,29 +558,43 @@ func recurringPatternFromInput(id string, createdAt time.Time, input RecurringPa
 	}, nil
 }
 
-func normalizeExpenses(expenses []Expense) {
-	for i := range expenses {
-		expenses[i].Category = normalizeStoreCategory(expenses[i].Category)
-		if expenses[i].RecurringPatternID != nil {
-			recurringPatternID := strings.TrimSpace(*expenses[i].RecurringPatternID)
-			if recurringPatternID == "" {
-				expenses[i].RecurringPatternID = nil
-				continue
-			}
-			expenses[i].RecurringPatternID = &recurringPatternID
+func normalizeLoadedExpense(expense *Expense) {
+	expense.Category = normalizeStoreCategory(expense.Category)
+	if expense.RecurringPatternID != nil {
+		recurringPatternID := strings.TrimSpace(*expense.RecurringPatternID)
+		if recurringPatternID == "" {
+			expense.RecurringPatternID = nil
+		} else {
+			expense.RecurringPatternID = &recurringPatternID
 		}
+	}
+	if !expense.Date.IsZero() {
+		expense.Date = expense.Date.UTC()
+	}
+	if !expense.CreatedAt.IsZero() {
+		expense.CreatedAt = expense.CreatedAt.UTC()
 	}
 }
 
-func normalizeRecurringPatterns(patterns []RecurringPattern) {
-	for i := range patterns {
-		patterns[i].Category = normalizeStoreCategory(patterns[i].Category)
-		patterns[i].Note = strings.TrimSpace(patterns[i].Note)
-		patterns[i].Frequency = strings.ToLower(strings.TrimSpace(patterns[i].Frequency))
-		if patterns[i].EndDate != nil {
-			end := patterns[i].EndDate.UTC()
-			patterns[i].EndDate = &end
-		}
+func normalizeLoadedPattern(pattern *RecurringPattern) {
+	pattern.Category = normalizeStoreCategory(pattern.Category)
+	pattern.Note = strings.TrimSpace(pattern.Note)
+	pattern.Frequency = strings.ToLower(strings.TrimSpace(pattern.Frequency))
+	if !pattern.StartDate.IsZero() {
+		pattern.StartDate = pattern.StartDate.UTC()
+	}
+	if !pattern.NextRunDate.IsZero() {
+		pattern.NextRunDate = pattern.NextRunDate.UTC()
+	}
+	if pattern.EndDate != nil {
+		end := pattern.EndDate.UTC()
+		pattern.EndDate = &end
+	}
+	if !pattern.CreatedAt.IsZero() {
+		pattern.CreatedAt = pattern.CreatedAt.UTC()
+	}
+	if !pattern.UpdatedAt.IsZero() {
+		pattern.UpdatedAt = pattern.UpdatedAt.UTC()
 	}
 }
 
@@ -476,6 +608,35 @@ func emptyStoreEnvelopeJSON() []byte {
 		return []byte("{}\n")
 	}
 	return append(data, '\n')
+}
+
+func recurrenceOccurrenceKey(patternID string, date time.Time) string {
+	return patternID + "|" + date.UTC().Format("2006-01-02")
+}
+
+func advanceRecurringDate(current time.Time, frequency string, anchorDay int) (time.Time, bool) {
+	current = current.UTC()
+	switch frequency {
+	case "weekly":
+		return current.AddDate(0, 0, 7), true
+	case "monthly":
+		nextMonth := time.Date(current.Year(), current.Month(), 1, current.Hour(), current.Minute(), current.Second(), current.Nanosecond(), time.UTC).AddDate(0, 1, 0)
+		if anchorDay < 1 {
+			anchorDay = 1
+		}
+		day := anchorDay
+		maxDay := daysInMonth(nextMonth.Year(), nextMonth.Month())
+		if day > maxDay {
+			day = maxDay
+		}
+		return time.Date(nextMonth.Year(), nextMonth.Month(), day, current.Hour(), current.Minute(), current.Second(), current.Nanosecond(), time.UTC), true
+	default:
+		return time.Time{}, false
+	}
+}
+
+func daysInMonth(year int, month time.Month) int {
+	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
 }
 
 func startForPeriod(period string, now time.Time) time.Time {

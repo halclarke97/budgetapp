@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -17,10 +18,28 @@ type apiServer struct {
 }
 
 type expenseRequest struct {
-	Amount   float64 `json:"amount"`
-	Category string  `json:"category"`
-	Note     string  `json:"note"`
-	Date     string  `json:"date"`
+	Amount    float64                 `json:"amount"`
+	Category  string                  `json:"category"`
+	Note      string                  `json:"note"`
+	Date      string                  `json:"date"`
+	Recurring *expenseRecurringConfig `json:"recurring,omitempty"`
+}
+
+type expenseRecurringConfig struct {
+	Enabled   bool   `json:"enabled"`
+	Frequency string `json:"frequency"`
+	EndDate   string `json:"end_date"`
+}
+
+type recurringPatternRequest struct {
+	Amount      float64 `json:"amount"`
+	Category    string  `json:"category"`
+	Note        string  `json:"note"`
+	Frequency   string  `json:"frequency"`
+	StartDate   string  `json:"start_date"`
+	NextRunDate string  `json:"next_run_date"`
+	EndDate     *string `json:"end_date"`
+	Active      *bool   `json:"active"`
 }
 
 func main() {
@@ -45,6 +64,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/expenses", server.handleExpenses)
 	mux.HandleFunc("/api/expenses/", server.handleExpenseByID)
+	mux.HandleFunc("/api/recurring-expenses/upcoming", server.handleUpcomingRecurringExpenses)
+	mux.HandleFunc("/api/recurring-expenses", server.handleRecurringExpenses)
+	mux.HandleFunc("/api/recurring-expenses/", server.handleRecurringExpenseByID)
 	mux.HandleFunc("/api/categories", server.handleCategories)
 	mux.HandleFunc("/api/stats", server.handleStats)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -78,13 +100,17 @@ func (s *apiServer) handleExpenses(w http.ResponseWriter, r *http.Request) {
 		expenses := s.store.List(filter)
 		writeJSON(w, http.StatusOK, expenses)
 	case http.MethodPost:
-		input, err := decodeExpenseRequest(r)
+		input, recurring, err := decodeExpenseCreateRequest(r)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		expense, err := s.store.Create(input)
+		expense, _, err := s.store.CreateExpenseWithRecurring(input, recurring)
 		if err != nil {
+			if errors.Is(err, ErrInvalidRecurringPattern) {
+				writeError(w, http.StatusBadRequest, recurringPatternErrorMessage(err))
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to create expense")
 			return
 		}
@@ -153,6 +179,122 @@ func (s *apiServer) handleCategories(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.categories)
 }
 
+func (s *apiServer) handleRecurringExpenses(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		patterns := s.store.ListRecurringPatterns()
+		writeJSON(w, http.StatusOK, patterns)
+	case http.MethodPost:
+		input, err := decodeRecurringPatternRequest(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		pattern, err := s.store.CreateRecurringPattern(input)
+		if err != nil {
+			if errors.Is(err, ErrInvalidRecurringPattern) {
+				writeError(w, http.StatusBadRequest, recurringPatternErrorMessage(err))
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to create recurring pattern")
+			return
+		}
+		writeJSON(w, http.StatusCreated, pattern)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *apiServer) handleRecurringExpenseByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/recurring-expenses/")
+	if id == "" || strings.Contains(id, "/") {
+		writeError(w, http.StatusNotFound, "recurring pattern not found")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		input, err := decodeRecurringPatternRequest(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		pattern, err := s.store.UpdateRecurringPattern(id, input)
+		if err != nil {
+			if errors.Is(err, ErrRecurringPatternNotFound) {
+				writeError(w, http.StatusNotFound, "recurring pattern not found")
+				return
+			}
+			if errors.Is(err, ErrInvalidRecurringPattern) {
+				writeError(w, http.StatusBadRequest, recurringPatternErrorMessage(err))
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to update recurring pattern")
+			return
+		}
+		writeJSON(w, http.StatusOK, pattern)
+	case http.MethodDelete:
+		pattern, err := s.store.GetRecurringPattern(id)
+		if err != nil {
+			if errors.Is(err, ErrRecurringPatternNotFound) {
+				writeError(w, http.StatusNotFound, "recurring pattern not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to load recurring pattern")
+			return
+		}
+		if !pattern.Active {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		_, err = s.store.UpdateRecurringPattern(id, RecurringPatternInput{
+			Amount:      pattern.Amount,
+			Category:    pattern.Category,
+			Note:        pattern.Note,
+			Frequency:   pattern.Frequency,
+			StartDate:   pattern.StartDate,
+			NextRunDate: pattern.NextRunDate,
+			EndDate:     pattern.EndDate,
+			Active:      false,
+		})
+		if err != nil {
+			if errors.Is(err, ErrRecurringPatternNotFound) {
+				writeError(w, http.StatusNotFound, "recurring pattern not found")
+				return
+			}
+			if errors.Is(err, ErrInvalidRecurringPattern) {
+				writeError(w, http.StatusBadRequest, recurringPatternErrorMessage(err))
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to deactivate recurring pattern")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *apiServer) handleUpcomingRecurringExpenses(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if _, err := s.store.SweepRecurringExpenses(time.Now().UTC()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to sweep recurring expenses")
+		return
+	}
+
+	days, err := parseUpcomingDays(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	upcoming := s.store.UpcomingRecurringOccurrences(days, time.Now().UTC())
+	writeJSON(w, http.StatusOK, upcoming)
+}
+
 func (s *apiServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -174,6 +316,18 @@ func (s *apiServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+func parseUpcomingDays(r *http.Request) (int, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("days"))
+	if raw == "" {
+		return 30, nil
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil || days < 1 {
+		return 0, errors.New("days must be a positive integer")
+	}
+	return days, nil
+}
+
 func parseExpenseFilter(r *http.Request) (ExpenseFilter, error) {
 	query := r.URL.Query()
 	filter := ExpenseFilter{Category: normalizeCategory(query.Get("category"))}
@@ -193,6 +347,39 @@ func parseExpenseFilter(r *http.Request) (ExpenseFilter, error) {
 		filter.To = &to
 	}
 	return filter, nil
+}
+
+func decodeExpenseCreateRequest(r *http.Request) (ExpenseInput, *ExpenseRecurringInput, error) {
+	defer r.Body.Close()
+
+	var req expenseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return ExpenseInput{}, nil, errors.New("invalid JSON payload")
+	}
+	if req.Amount <= 0 {
+		return ExpenseInput{}, nil, errors.New("amount must be greater than zero")
+	}
+
+	date := time.Now().UTC()
+	if strings.TrimSpace(req.Date) != "" {
+		parsed, err := parseDateValue(req.Date)
+		if err != nil {
+			return ExpenseInput{}, nil, errors.New("invalid date")
+		}
+		date = parsed
+	}
+
+	recurring, err := decodeExpenseRecurringConfig(req.Recurring, date)
+	if err != nil {
+		return ExpenseInput{}, nil, err
+	}
+
+	return ExpenseInput{
+		Amount:   req.Amount,
+		Category: normalizeCategory(req.Category),
+		Note:     strings.TrimSpace(req.Note),
+		Date:     date,
+	}, recurring, nil
 }
 
 func decodeExpenseRequest(r *http.Request) (ExpenseInput, error) {
@@ -221,6 +408,100 @@ func decodeExpenseRequest(r *http.Request) (ExpenseInput, error) {
 		Note:     strings.TrimSpace(req.Note),
 		Date:     date,
 	}, nil
+}
+
+func decodeExpenseRecurringConfig(config *expenseRecurringConfig, expenseDate time.Time) (*ExpenseRecurringInput, error) {
+	if config == nil || !config.Enabled {
+		return nil, nil
+	}
+
+	frequency := strings.ToLower(strings.TrimSpace(config.Frequency))
+	if frequency != "weekly" && frequency != "monthly" {
+		return nil, errors.New("recurring.frequency must be 'weekly' or 'monthly' when recurring.enabled is true")
+	}
+
+	var endDate *time.Time
+	if rawEndDate := strings.TrimSpace(config.EndDate); rawEndDate != "" {
+		parsed, err := parseDateValue(rawEndDate)
+		if err != nil {
+			return nil, errors.New("recurring.end_date must be a valid date")
+		}
+		if parsed.Before(startOfDay(expenseDate)) {
+			return nil, errors.New("recurring.end_date must be on or after expense date")
+		}
+		endDate = &parsed
+	}
+
+	return &ExpenseRecurringInput{
+		Frequency: frequency,
+		EndDate:   endDate,
+	}, nil
+}
+
+func decodeRecurringPatternRequest(r *http.Request) (RecurringPatternInput, error) {
+	defer r.Body.Close()
+
+	var req recurringPatternRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return RecurringPatternInput{}, errors.New("invalid JSON payload")
+	}
+	if req.Amount <= 0 {
+		return RecurringPatternInput{}, errors.New("amount must be greater than zero")
+	}
+
+	frequency := strings.ToLower(strings.TrimSpace(req.Frequency))
+	if frequency != "weekly" && frequency != "monthly" {
+		return RecurringPatternInput{}, errors.New("frequency must be 'weekly' or 'monthly'")
+	}
+
+	startDate := time.Now().UTC()
+	if raw := strings.TrimSpace(req.StartDate); raw != "" {
+		parsed, err := parseDateValue(raw)
+		if err != nil {
+			return RecurringPatternInput{}, errors.New("start_date must be a valid date")
+		}
+		startDate = parsed
+	}
+
+	nextRunDate := startDate
+	if raw := strings.TrimSpace(req.NextRunDate); raw != "" {
+		parsed, err := parseDateValue(raw)
+		if err != nil {
+			return RecurringPatternInput{}, errors.New("next_run_date must be a valid date")
+		}
+		nextRunDate = parsed
+	}
+
+	var endDate *time.Time
+	if req.EndDate != nil && strings.TrimSpace(*req.EndDate) != "" {
+		parsed, err := parseDateValue(*req.EndDate)
+		if err != nil {
+			return RecurringPatternInput{}, errors.New("end_date must be a valid date")
+		}
+		endDate = &parsed
+	}
+
+	active := true
+	if req.Active != nil {
+		active = *req.Active
+	}
+
+	return RecurringPatternInput{
+		Amount:      req.Amount,
+		Category:    normalizeCategory(req.Category),
+		Note:        strings.TrimSpace(req.Note),
+		Frequency:   frequency,
+		StartDate:   startDate,
+		NextRunDate: nextRunDate,
+		EndDate:     endDate,
+		Active:      active,
+	}, nil
+}
+
+func recurringPatternErrorMessage(err error) string {
+	const prefix = "invalid recurring pattern: "
+	message := strings.TrimSpace(err.Error())
+	return strings.TrimPrefix(message, prefix)
 }
 
 func defaultCategories() []Category {

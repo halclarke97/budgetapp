@@ -26,6 +26,15 @@ type RecurringPattern struct {
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
+type UpcomingRecurringOccurrence struct {
+	RecurringPatternID string    `json:"recurring_pattern_id"`
+	Date               time.Time `json:"date"`
+	Amount             float64   `json:"amount"`
+	Category           string    `json:"category"`
+	Note               string    `json:"note"`
+	Frequency          string    `json:"frequency"`
+}
+
 type Category struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`

@@ -178,6 +178,170 @@ func TestSweepRecurringExpensesMonthlyClampsToMonthEnd(t *testing.T) {
 	}
 }
 
+func TestSweepRecurringExpensesWeeklyStopsAfterEndDate(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+	endDate := time.Date(2026, time.January, 15, 12, 0, 0, 0, time.UTC)
+	pattern := RecurringPattern{
+		ID:          "pat_weekly_end",
+		Amount:      25,
+		Category:    "food",
+		Note:        "Meal prep",
+		Frequency:   "weekly",
+		StartDate:   start,
+		NextRunDate: start,
+		EndDate:     &endDate,
+		Active:      true,
+	}
+
+	store := newStoreWithRecurringPatterns(t, []RecurringPattern{pattern}, nil)
+	generated, err := store.SweepRecurringExpenses(time.Date(2026, time.January, 31, 8, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("sweep recurring expenses: %v", err)
+	}
+	if generated != 3 {
+		t.Fatalf("expected 3 generated weekly expenses before end_date, got %d", generated)
+	}
+
+	expenses := store.List(ExpenseFilter{})
+	if len(expenses) != 3 {
+		t.Fatalf("expected 3 generated weekly expenses, got %d", len(expenses))
+	}
+
+	wantDates := map[string]struct{}{
+		"2026-01-01": {},
+		"2026-01-08": {},
+		"2026-01-15": {},
+	}
+	for _, expense := range expenses {
+		dateKey := expense.Date.UTC().Format("2006-01-02")
+		if _, ok := wantDates[dateKey]; !ok {
+			t.Fatalf("unexpected date generated past end_date: %s", dateKey)
+		}
+	}
+
+	patterns := store.ListRecurringPatterns()
+	if got := patterns[0].NextRunDate.UTC(); !got.Equal(time.Date(2026, time.January, 22, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected next run date to advance to first date after end_date, got %s", got)
+	}
+}
+
+func TestSweepRecurringExpensesMonthlyClampsAcrossLeapAndThirtyDayMonths(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2024, time.January, 31, 12, 0, 0, 0, time.UTC)
+	pattern := RecurringPattern{
+		ID:          "pat_monthly_leap",
+		Amount:      120,
+		Category:    "housing",
+		Note:        "Lease",
+		Frequency:   "monthly",
+		StartDate:   start,
+		NextRunDate: start,
+		Active:      true,
+	}
+
+	store := newStoreWithRecurringPatterns(t, []RecurringPattern{pattern}, nil)
+	generated, err := store.SweepRecurringExpenses(time.Date(2024, time.May, 31, 8, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("sweep recurring expenses: %v", err)
+	}
+	if generated != 5 {
+		t.Fatalf("expected 5 generated monthly expenses, got %d", generated)
+	}
+
+	wantDates := map[string]struct{}{
+		"2024-01-31": {},
+		"2024-02-29": {},
+		"2024-03-31": {},
+		"2024-04-30": {},
+		"2024-05-31": {},
+	}
+	for _, expense := range store.List(ExpenseFilter{}) {
+		dateKey := expense.Date.UTC().Format("2006-01-02")
+		if _, ok := wantDates[dateKey]; !ok {
+			t.Fatalf("unexpected monthly generated date: %s", dateKey)
+		}
+	}
+
+	patterns := store.ListRecurringPatterns()
+	if got := patterns[0].NextRunDate.UTC(); !got.Equal(time.Date(2024, time.June, 30, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected next run date 2024-06-30 after monthly clamping, got %s", got)
+	}
+}
+
+func TestSweepRecurringExpensesIsIdempotentWithPreexistingFutureOccurrences(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+	pattern := RecurringPattern{
+		ID:          "pat_preexisting",
+		Amount:      60,
+		Category:    "transportation",
+		Note:        "Transit pass",
+		Frequency:   "weekly",
+		StartDate:   start,
+		NextRunDate: time.Date(2026, time.January, 8, 12, 0, 0, 0, time.UTC),
+		Active:      true,
+	}
+	patternID := pattern.ID
+	existing := []Expense{
+		{
+			ID:                 "exp_existing_8",
+			Amount:             60,
+			Category:           "transportation",
+			Note:               "Transit pass",
+			Date:               time.Date(2026, time.January, 8, 12, 0, 0, 0, time.UTC),
+			CreatedAt:          start,
+			RecurringPatternID: &patternID,
+		},
+		{
+			ID:                 "exp_existing_22",
+			Amount:             60,
+			Category:           "transportation",
+			Note:               "Transit pass",
+			Date:               time.Date(2026, time.January, 22, 12, 0, 0, 0, time.UTC),
+			CreatedAt:          start,
+			RecurringPatternID: &patternID,
+		},
+	}
+
+	store := newStoreWithRecurringPatterns(t, []RecurringPattern{pattern}, existing)
+	generated, err := store.SweepRecurringExpenses(time.Date(2026, time.January, 22, 10, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("sweep recurring expenses: %v", err)
+	}
+	if generated != 1 {
+		t.Fatalf("expected only missing Jan 15 to be generated, got %d", generated)
+	}
+
+	expenses := store.List(ExpenseFilter{})
+	if len(expenses) != 3 {
+		t.Fatalf("expected 3 total recurring expenses, got %d", len(expenses))
+	}
+
+	seenDates := map[string]struct{}{}
+	for _, expense := range expenses {
+		if expense.RecurringPatternID == nil || *expense.RecurringPatternID != pattern.ID {
+			continue
+		}
+		dateKey := expense.Date.UTC().Format("2006-01-02")
+		if _, exists := seenDates[dateKey]; exists {
+			t.Fatalf("duplicate expense generated for date %s", dateKey)
+		}
+		seenDates[dateKey] = struct{}{}
+	}
+	if len(seenDates) != 3 {
+		t.Fatalf("expected exactly Jan 8/15/22 recurring dates, got %d", len(seenDates))
+	}
+
+	patterns := store.ListRecurringPatterns()
+	if got := patterns[0].NextRunDate.UTC(); !got.Equal(time.Date(2026, time.January, 29, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected next run date 2026-01-29, got %s", got)
+	}
+}
+
 func newStoreWithRecurringPatterns(t *testing.T, patterns []RecurringPattern, expenses []Expense) *Store {
 	t.Helper()
 

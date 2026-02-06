@@ -1,287 +1,385 @@
-import { useState, useEffect, useCallback } from 'react'
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
-const CATEGORY_COLORS = {
-  food: '#F97316',
-  transportation: '#0EA5E9',
-  housing: '#22C55E',
-  entertainment: '#EC4899',
-  shopping: '#8B5CF6',
-  health: '#EF4444',
-  education: '#FACC15',
-  other: '#64748B',
+const money = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+})
+
+const dateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+})
+
+const baseForm = {
+  amount: '',
+  category: 'other',
+  note: '',
+  date: new Date().toISOString().slice(0, 10),
 }
 
 export default function App() {
   const [expenses, setExpenses] = useState([])
   const [categories, setCategories] = useState([])
   const [stats, setStats] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [showModal, setShowModal] = useState(false)
+  const [period, setPeriod] = useState('month')
+  const [filters, setFilters] = useState({ category: '', from: '', to: '' })
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [modalOpen, setModalOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState(null)
-  const [filter, setFilter] = useState({ category: '', period: 'month' })
 
-  const fetchData = useCallback(async () => {
+  const categoryMap = useMemo(() => {
+    return categories.reduce((acc, category) => {
+      acc[category.id] = category
+      return acc
+    }, {})
+  }, [categories])
+
+  useEffect(() => {
+    void refreshAll()
+  }, [period, filters.category, filters.from, filters.to])
+
+  async function refreshAll() {
     try {
-      setLoading(true)
-      const [expensesRes, categoriesRes, statsRes] = await Promise.all([
-        apiRequest('/api/expenses'),
+      setIsLoading(true)
+      setError('')
+
+      const query = new URLSearchParams()
+      if (filters.category) query.set('category', filters.category)
+      if (filters.from) query.set('from', filters.from)
+      if (filters.to) query.set('to', filters.to)
+
+      const [categoriesData, expensesData, statsData] = await Promise.all([
         apiRequest('/api/categories'),
-        apiRequest(`/api/stats?period=${filter.period}`),
+        apiRequest(`/api/expenses${query.toString() ? `?${query.toString()}` : ''}`),
+        apiRequest(`/api/stats?period=${period}`),
       ])
-      setExpenses(expensesRes || [])
-      setCategories(categoriesRes || [])
-      setStats(statsRes)
-      setError(null)
+
+      setCategories(categoriesData)
+      setExpenses(expensesData)
+      setStats(statsData)
     } catch (err) {
       setError(err.message)
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
-  }, [filter.period])
+  }
 
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
-
-  const handleAddExpense = () => {
+  function openCreateModal() {
     setEditingExpense(null)
-    setShowModal(true)
+    setModalOpen(true)
   }
 
-  const handleEditExpense = (expense) => {
+  function openEditModal(expense) {
     setEditingExpense(expense)
-    setShowModal(true)
+    setModalOpen(true)
   }
 
-  const handleDeleteExpense = async (id) => {
-    if (!confirm('Delete this expense?')) return
+  async function saveExpense(formValues) {
+    const payload = {
+      amount: Number(formValues.amount),
+      category: formValues.category,
+      note: formValues.note,
+      date: formValues.date,
+    }
+
+    if (editingExpense) {
+      await apiRequest(`/api/expenses/${editingExpense.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+    } else {
+      await apiRequest('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+    }
+
+    setModalOpen(false)
+    setEditingExpense(null)
+    await refreshAll()
+  }
+
+  async function deleteExpense(id) {
+    if (!window.confirm('Delete this expense?')) {
+      return
+    }
+
     try {
       await apiRequest(`/api/expenses/${id}`, { method: 'DELETE' })
-      fetchData()
+      await refreshAll()
     } catch (err) {
-      alert(err.message)
+      setError(err.message)
     }
   }
 
-  const handleSaveExpense = async (data) => {
-    try {
-      if (editingExpense) {
-        await apiRequest(`/api/expenses/${editingExpense.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        })
-      } else {
-        await apiRequest('/api/expenses', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        })
+  const pieData = useMemo(() => {
+    if (!stats) return []
+    return stats.by_category.map((item) => {
+      const category = categoryMap[item.category]
+      return {
+        name: category?.name ?? item.category,
+        value: item.total,
+        color: category?.color ?? '#64748B',
       }
-      setShowModal(false)
-      fetchData()
-    } catch (err) {
-      throw err
-    }
-  }
+    })
+  }, [stats, categoryMap])
 
-  const filteredExpenses = expenses.filter((exp) => {
-    if (filter.category && exp.category !== filter.category) return false
-    return true
-  })
-
-  if (loading && expenses.length === 0) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-slate-500">Loading...</p>
-      </div>
-    )
-  }
+  const trendData = stats?.trend ?? []
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <header className="mb-8 flex items-center justify-between">
+    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">BudgetApp</h1>
-          <p className="text-slate-500">Track your expenses</p>
+          <p className="text-sm uppercase tracking-[0.2em] text-slate-500">BudgetApp</p>
+          <h1 className="text-4xl font-bold text-ink">Expense Dashboard</h1>
+          <p className="mt-2 text-slate-600">Track spending, spot trends, and keep daily costs under control.</p>
         </div>
-        <button className="btn-primary" onClick={handleAddExpense}>
-          + Add Expense
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <select className="input" value={period} onChange={(event) => setPeriod(event.target.value)}>
+            <option value="week">This week</option>
+            <option value="month">This month</option>
+          </select>
+          <button type="button" className="btn-primary" onClick={openCreateModal}>
+            Add expense
+          </button>
+        </div>
       </header>
 
-      {error && (
-        <div className="mb-4 rounded-xl bg-red-100 p-4 text-red-700">
-          {error}
-        </div>
-      )}
+      {error ? (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">{error}</div>
+      ) : null}
 
-      {/* Stats Cards */}
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="card">
-          <p className="text-sm text-slate-500">Total Expenses</p>
-          <p className="text-2xl font-bold">{stats?.total_expenses || 0}</p>
-        </div>
-        <div className="card">
-          <p className="text-sm text-slate-500">Total Amount</p>
-          <p className="text-2xl font-bold">${(stats?.total_amount || 0).toFixed(2)}</p>
-        </div>
-        <div className="card">
-          <p className="text-sm text-slate-500">This {filter.period}</p>
-          <p className="text-2xl font-bold">${(stats?.period_total || 0).toFixed(2)}</p>
-        </div>
-        <div className="card">
-          <select
-            className="input w-full"
-            value={filter.period}
-            onChange={(e) => setFilter((f) => ({ ...f, period: e.target.value }))}
-          >
-            <option value="week">This Week</option>
-            <option value="month">This Month</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Charts */}
-      <div className="mb-8 grid gap-4 lg:grid-cols-2">
-        <div className="card">
-          <h2 className="mb-4 font-semibold">By Category</h2>
-          {stats?.by_category?.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={stats.by_category}
-                  dataKey="total"
-                  nameKey="category"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  label={({ category, total }) => `${category}: $${total.toFixed(0)}`}
-                >
-                  {stats.by_category.map((entry) => (
-                    <Cell key={entry.category} fill={CATEGORY_COLORS[entry.category] || '#64748B'} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-center text-slate-400">No data</p>
+      <section className="mb-6 grid gap-4 md:grid-cols-3">
+        <SummaryCard
+          label="Total spending"
+          value={money.format(stats?.total_amount ?? 0)}
+          hint={`${stats?.total_expenses ?? 0} expenses logged`}
+        />
+        <SummaryCard
+          label="Current period"
+          value={money.format(stats?.period_total ?? 0)}
+          hint={period === 'week' ? 'Monday to today' : 'Month to date'}
+        />
+        <SummaryCard
+          label="Average expense"
+          value={money.format(
+            stats?.total_expenses ? (stats.total_amount ?? 0) / stats.total_expenses : 0,
           )}
-        </div>
+          hint="Per transaction"
+        />
+      </section>
+
+      <section className="mb-6 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <div className="card">
-          <h2 className="mb-4 font-semibold">Spending Trend</h2>
-          {stats?.trend?.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={stats.trend}>
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
-                <Bar dataKey="total" fill="#0EA5E9" radius={[4, 4, 0, 0]} />
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Trend</h2>
+            <span className="text-xs uppercase tracking-[0.15em] text-slate-500">Daily totals</span>
+          </div>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(value) => `$${value}`} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(value) => money.format(Number(value))} />
+                <Bar dataKey="total" radius={[8, 8, 0, 0]} fill="#0EA5E9" />
               </BarChart>
             </ResponsiveContainer>
-          ) : (
-            <p className="text-center text-slate-400">No data</p>
-          )}
+          </div>
         </div>
-      </div>
+        <div className="card">
+          <h2 className="mb-4 text-xl font-semibold">By category</h2>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={pieData} dataKey="value" nameKey="name" outerRadius={90} innerRadius={45}>
+                  {pieData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Legend />
+                <Tooltip formatter={(value) => money.format(Number(value))} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
 
-      {/* Filter */}
-      <div className="mb-4 flex gap-2">
-        <select
-          className="input"
-          value={filter.category}
-          onChange={(e) => setFilter((f) => ({ ...f, category: e.target.value }))}
-        >
-          <option value="">All Categories</option>
-          {categories.map((cat) => (
-            <option key={cat.id} value={cat.id}>
-              {cat.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Expense List */}
-      <div className="card">
-        <h2 className="mb-4 font-semibold">Expenses</h2>
-        {filteredExpenses.length === 0 ? (
-          <p className="text-center text-slate-400">No expenses yet</p>
-        ) : (
-          <div className="space-y-2">
-            {filteredExpenses.map((expense) => (
-              <div
-                key={expense.id}
-                className="flex items-center justify-between rounded-xl bg-slate-50 p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="h-3 w-3 rounded-full"
-                    style={{ backgroundColor: CATEGORY_COLORS[expense.category] || '#64748B' }}
-                  />
-                  <div>
-                    <p className="font-medium">{expense.note || expense.category}</p>
-                    <p className="text-sm text-slate-500">
-                      {new Date(expense.date).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold">${expense.amount.toFixed(2)}</span>
-                  <button
-                    className="text-slate-400 hover:text-slate-600"
-                    onClick={() => handleEditExpense(expense)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="text-red-400 hover:text-red-600"
-                    onClick={() => handleDeleteExpense(expense.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
+      <section className="mb-6 card">
+        <div className="mb-4 flex flex-wrap gap-3">
+          <select
+            className="input"
+            value={filters.category}
+            onChange={(event) => setFilters((prev) => ({ ...prev, category: event.target.value }))}
+          >
+            <option value="">All categories</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
             ))}
+          </select>
+          <input
+            className="input"
+            type="date"
+            value={filters.from}
+            onChange={(event) => setFilters((prev) => ({ ...prev, from: event.target.value }))}
+          />
+          <input
+            className="input"
+            type="date"
+            value={filters.to}
+            onChange={(event) => setFilters((prev) => ({ ...prev, to: event.target.value }))}
+          />
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setFilters({ category: '', from: '', to: '' })}
+          >
+            Clear filters
+          </button>
+        </div>
+
+        <h2 className="mb-3 text-xl font-semibold">Expenses</h2>
+
+        {isLoading ? (
+          <p className="text-slate-500">Loading expenses...</p>
+        ) : expenses.length === 0 ? (
+          <p className="text-slate-500">No expenses found for selected filters.</p>
+        ) : (
+          <div className="overflow-auto">
+            <table className="min-w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-slate-600">
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Category</th>
+                  <th className="px-3 py-2">Note</th>
+                  <th className="px-3 py-2 text-right">Amount</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map((expense) => (
+                  <tr key={expense.id} className="border-b border-slate-100">
+                    <td className="px-3 py-3">{dateFormatter.format(new Date(expense.date))}</td>
+                    <td className="px-3 py-3">{categoryMap[expense.category]?.name ?? expense.category}</td>
+                    <td className="px-3 py-3">{expense.note || '-'}</td>
+                    <td className="px-3 py-3 text-right font-semibold">{money.format(expense.amount)}</td>
+                    <td className="px-3 py-3 text-right">
+                      <button
+                        type="button"
+                        className="mr-2 text-sm font-semibold text-sky-700"
+                        onClick={() => openEditModal(expense)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="text-sm font-semibold text-red-600"
+                        onClick={() => deleteExpense(expense.id)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-      </div>
+      </section>
 
-      {showModal && (
+      <section className="card">
+        <h2 className="mb-3 text-xl font-semibold">Recent expenses</h2>
+        <ul className="space-y-3">
+          {expenses.slice(0, 5).map((expense) => (
+            <li
+              key={`recent-${expense.id}`}
+              className="flex items-center justify-between rounded-xl border border-slate-100 px-4 py-3"
+            >
+              <div>
+                <p className="font-semibold text-ink">{expense.note || 'Untitled expense'}</p>
+                <p className="text-sm text-slate-500">
+                  {categoryMap[expense.category]?.name ?? expense.category} •{' '}
+                  {dateFormatter.format(new Date(expense.date))}
+                </p>
+              </div>
+              <p className="font-semibold">{money.format(expense.amount)}</p>
+            </li>
+          ))}
+          {expenses.length === 0 ? <li className="text-slate-500">Add your first expense to start tracking.</li> : null}
+        </ul>
+      </section>
+
+      {modalOpen ? (
         <ExpenseModal
-          expense={editingExpense}
           categories={categories}
-          onSave={handleSaveExpense}
-          onClose={() => setShowModal(false)}
+          initialValues={editingExpense}
+          onClose={() => {
+            setModalOpen(false)
+            setEditingExpense(null)
+          }}
+          onSave={saveExpense}
         />
-      )}
+      ) : null}
     </div>
   )
 }
 
-function ExpenseModal({ expense, categories, onSave, onClose }) {
-  const [form, setForm] = useState({
-    amount: expense?.amount?.toString() || '',
-    category: expense?.category || 'other',
-    note: expense?.note || '',
-    date: expense?.date ? new Date(expense.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-  })
-  const [error, setError] = useState(null)
-  const [submitting, setSubmitting] = useState(false)
+function SummaryCard({ label, value, hint }) {
+  return (
+    <div className="card">
+      <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="mt-2 text-3xl font-bold text-ink">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{hint}</p>
+    </div>
+  )
+}
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setSubmitting(true)
-    setError(null)
+function ExpenseModal({ categories, initialValues, onClose, onSave }) {
+  const [form, setForm] = useState(() => {
+    if (!initialValues) {
+      return baseForm
+    }
+    return {
+      amount: String(initialValues.amount),
+      category: initialValues.category,
+      note: initialValues.note ?? '',
+      date: new Date(initialValues.date).toISOString().slice(0, 10),
+    }
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+
+    if (!form.amount || Number(form.amount) <= 0) {
+      setError('Amount must be greater than zero.')
+      return
+    }
+
     try {
-      await onSave({
-        amount: parseFloat(form.amount),
-        category: form.category,
-        note: form.note,
-        date: form.date,
-      })
+      setSubmitting(true)
+      setError('')
+      await onSave(form)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -290,10 +388,10 @@ function ExpenseModal({ expense, categories, onSave, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="card w-full max-w-md">
-        <h2 className="mb-4 text-xl font-bold">{expense ? 'Edit Expense' : 'Add Expense'}</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/45 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <h3 className="text-2xl font-bold text-ink">{initialValues ? 'Edit expense' : 'Add expense'}</h3>
+        <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
           <label className="block text-sm font-semibold text-slate-600" htmlFor="amount">
             Amount
           </label>
@@ -304,9 +402,9 @@ function ExpenseModal({ expense, categories, onSave, onClose }) {
             min="0"
             step="0.01"
             value={form.amount}
-            onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
-            required
+            onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
           />
+
           <label className="block text-sm font-semibold text-slate-600" htmlFor="category">
             Category
           </label>
@@ -314,7 +412,7 @@ function ExpenseModal({ expense, categories, onSave, onClose }) {
             id="category"
             className="input w-full"
             value={form.category}
-            onChange={(e) => setForm((prev) => ({ ...prev, category: e.target.value }))}
+            onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
           >
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
@@ -322,6 +420,7 @@ function ExpenseModal({ expense, categories, onSave, onClose }) {
               </option>
             ))}
           </select>
+
           <label className="block text-sm font-semibold text-slate-600" htmlFor="note">
             Note
           </label>
@@ -330,9 +429,10 @@ function ExpenseModal({ expense, categories, onSave, onClose }) {
             className="input w-full"
             type="text"
             value={form.note}
-            onChange={(e) => setForm((prev) => ({ ...prev, note: e.target.value }))}
+            onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))}
             placeholder="Coffee, rent, groceries..."
           />
+
           <label className="block text-sm font-semibold text-slate-600" htmlFor="date">
             Date
           </label>
@@ -341,15 +441,17 @@ function ExpenseModal({ expense, categories, onSave, onClose }) {
             className="input w-full"
             type="date"
             value={form.date}
-            onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
+            onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))}
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
           <div className="mt-6 flex justify-end gap-3">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>
               Cancel
             </button>
             <button type="submit" className="btn-primary" disabled={submitting}>
-              {submitting ? 'Saving...' : 'Save'}
+              {submitting ? 'Saving...' : 'Save expense'}
             </button>
           </div>
         </form>

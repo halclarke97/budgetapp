@@ -5,16 +5,15 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"budgetapp/backend/models"
-	"budgetapp/backend/store"
 )
 
-type Server struct {
-	store *store.Store
+type apiServer struct {
+	store      *Store
+	categories []Category
 }
 
 type expenseRequest struct {
@@ -25,109 +24,134 @@ type expenseRequest struct {
 }
 
 func main() {
-	dataPath := detectDataPath()
-	expenseStore, err := store.New(dataPath)
+	dataPath := os.Getenv("DATA_FILE")
+	if dataPath == "" {
+		dataPath = detectDataPath()
+	}
+
+	st, err := NewStore(dataPath)
 	if err != nil {
 		log.Fatalf("failed to initialize store: %v", err)
 	}
 
-	srv := &Server{store: expenseStore}
+	server := &apiServer{
+		store:      st,
+		categories: defaultCategories(),
+	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/expenses", srv.handleListExpenses)
-	mux.HandleFunc("POST /api/expenses", srv.handleCreateExpense)
-	mux.HandleFunc("GET /api/expenses/{id}", srv.handleGetExpense)
-	mux.HandleFunc("PUT /api/expenses/{id}", srv.handleUpdateExpense)
-	mux.HandleFunc("DELETE /api/expenses/{id}", srv.handleDeleteExpense)
-	mux.HandleFunc("GET /api/categories", srv.handleListCategories)
-	mux.HandleFunc("GET /api/stats", srv.handleStats)
+	mux.HandleFunc("/api/expenses", server.handleExpenses)
+	mux.HandleFunc("/api/expenses/", server.handleExpenseByID)
+	mux.HandleFunc("/api/categories", server.handleCategories)
+	mux.HandleFunc("/api/stats", server.handleStats)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
 
-	handler := loggingMiddleware(withCORS(mux))
+	addr := ":8080"
+	if port := os.Getenv("PORT"); port != "" {
+		addr = ":" + port
+	}
 
-	log.Println("Starting server on :8080")
-	if err := http.ListenAndServe(":8080", handler); err != nil {
-		log.Fatalf("server failed: %v", err)
+	log.Printf("budgetapp backend listening on %s", addr)
+	if err := http.ListenAndServe(addr, withCORS(loggingMiddleware(mux))); err != nil {
+		log.Fatal(err)
 	}
 }
 
-func (s *Server) handleListExpenses(w http.ResponseWriter, r *http.Request) {
-	filter, err := parseExpenseFilter(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+func (s *apiServer) handleExpenses(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		filter, err := parseExpenseFilter(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		expenses := s.store.List(filter)
+		writeJSON(w, http.StatusOK, expenses)
+	case http.MethodPost:
+		input, err := decodeExpenseRequest(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		expense, err := s.store.Create(input)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to create expense")
+			return
+		}
+		writeJSON(w, http.StatusCreated, expense)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
-	expenses := s.store.List(filter)
-	writeJSON(w, http.StatusOK, expenses)
 }
 
-func (s *Server) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
-	input, err := decodeExpenseRequest(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	expense, err := s.store.Create(input)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, expense)
-}
-
-func (s *Server) handleGetExpense(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	expense, err := s.store.Get(id)
-	if errors.Is(err, store.ErrNotFound) {
+func (s *apiServer) handleExpenseByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/expenses/")
+	if id == "" || strings.Contains(id, "/") {
 		writeError(w, http.StatusNotFound, "expense not found")
 		return
 	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+
+	switch r.Method {
+	case http.MethodGet:
+		expense, err := s.store.Get(id)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusNotFound, "expense not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to load expense")
+			return
+		}
+		writeJSON(w, http.StatusOK, expense)
+	case http.MethodPut:
+		input, err := decodeExpenseRequest(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		expense, err := s.store.Update(id, input)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusNotFound, "expense not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to update expense")
+			return
+		}
+		writeJSON(w, http.StatusOK, expense)
+	case http.MethodDelete:
+		err := s.store.Delete(id)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusNotFound, "expense not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to delete expense")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
-	writeJSON(w, http.StatusOK, expense)
 }
 
-func (s *Server) handleUpdateExpense(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	input, err := decodeExpenseRequest(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+func (s *apiServer) handleCategories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	expense, err := s.store.Update(id, input)
-	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "expense not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, expense)
+	writeJSON(w, http.StatusOK, s.categories)
 }
 
-func (s *Server) handleDeleteExpense(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	err := s.store.Delete(id)
-	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "expense not found")
+func (s *apiServer) handleStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handleListCategories(w http.ResponseWriter, r *http.Request) {
-	categories := defaultCategories()
-	writeJSON(w, http.StatusOK, categories)
-}
-
-func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	period := r.URL.Query().Get("period")
+	period := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("period")))
 	if period == "" {
 		period = "month"
 	}
@@ -139,44 +163,48 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
-func parseExpenseFilter(r *http.Request) (store.ExpenseFilter, error) {
+func parseExpenseFilter(r *http.Request) (ExpenseFilter, error) {
 	query := r.URL.Query()
-	filter := store.ExpenseFilter{Category: normalizeCategory(query.Get("category"))}
+	filter := ExpenseFilter{Category: normalizeCategory(query.Get("category"))}
+
 	if fromRaw := strings.TrimSpace(query.Get("from")); fromRaw != "" {
 		from, err := parseDateValue(fromRaw)
 		if err != nil {
-			return store.ExpenseFilter{}, errors.New("invalid from date")
+			return ExpenseFilter{}, errors.New("invalid from date")
 		}
 		filter.From = &from
 	}
 	if toRaw := strings.TrimSpace(query.Get("to")); toRaw != "" {
 		to, err := parseDateValue(toRaw)
 		if err != nil {
-			return store.ExpenseFilter{}, errors.New("invalid to date")
+			return ExpenseFilter{}, errors.New("invalid to date")
 		}
 		filter.To = &to
 	}
 	return filter, nil
 }
 
-func decodeExpenseRequest(r *http.Request) (store.ExpenseInput, error) {
+func decodeExpenseRequest(r *http.Request) (ExpenseInput, error) {
 	defer r.Body.Close()
+
 	var req expenseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		return store.ExpenseInput{}, errors.New("invalid JSON payload")
+		return ExpenseInput{}, errors.New("invalid JSON payload")
 	}
 	if req.Amount <= 0 {
-		return store.ExpenseInput{}, errors.New("amount must be greater than zero")
+		return ExpenseInput{}, errors.New("amount must be greater than zero")
 	}
+
 	date := time.Now().UTC()
 	if strings.TrimSpace(req.Date) != "" {
 		parsed, err := parseDateValue(req.Date)
 		if err != nil {
-			return store.ExpenseInput{}, errors.New("invalid date")
+			return ExpenseInput{}, errors.New("invalid date")
 		}
 		date = parsed
 	}
-	return store.ExpenseInput{
+
+	return ExpenseInput{
 		Amount:   req.Amount,
 		Category: normalizeCategory(req.Category),
 		Note:     strings.TrimSpace(req.Note),
@@ -184,8 +212,8 @@ func decodeExpenseRequest(r *http.Request) (store.ExpenseInput, error) {
 	}, nil
 }
 
-func defaultCategories() []models.Category {
-	return []models.Category{
+func defaultCategories() []Category {
+	return []Category{
 		{ID: "food", Name: "🍔 Food & Dining", Color: "#F97316"},
 		{ID: "transportation", Name: "🚗 Transportation", Color: "#0EA5E9"},
 		{ID: "housing", Name: "🏠 Housing", Color: "#22C55E"},
@@ -252,7 +280,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 func detectDataPath() string {
 	candidates := []string{"data/expenses.json", filepath.Join("backend", "data", "expenses.json")}
 	for _, candidate := range candidates {
-		if _, err := filepath.Abs(candidate); err == nil {
+		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
 	}

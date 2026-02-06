@@ -1,4 +1,4 @@
-package store
+package main
 
 import (
 	"crypto/rand"
@@ -12,8 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"budgetapp/backend/models"
 )
 
 var ErrNotFound = errors.New("expense not found")
@@ -34,10 +32,10 @@ type ExpenseInput struct {
 type Store struct {
 	mu       sync.RWMutex
 	filePath string
-	expenses []models.Expense
+	expenses []Expense
 }
 
-func New(path string) (*Store, error) {
+func NewStore(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
@@ -63,26 +61,26 @@ func (s *Store) load() error {
 		return fmt.Errorf("read data file: %w", err)
 	}
 	if len(data) == 0 {
-		s.expenses = []models.Expense{}
+		s.expenses = []Expense{}
 		return nil
 	}
 
-	var expenses []models.Expense
+	var expenses []Expense
 	if err := json.Unmarshal(data, &expenses); err != nil {
 		return fmt.Errorf("parse data file: %w", err)
 	}
 	for i := range expenses {
-		expenses[i].Category = normalizeCategory(expenses[i].Category)
+		expenses[i].Category = normalizeStoreCategory(expenses[i].Category)
 	}
 	s.expenses = expenses
 	return nil
 }
 
-func (s *Store) List(filter ExpenseFilter) []models.Expense {
+func (s *Store) List(filter ExpenseFilter) []Expense {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	result := make([]models.Expense, 0, len(s.expenses))
+	result := make([]Expense, 0, len(s.expenses))
 	for _, expense := range s.expenses {
 		if filter.Category != "" && expense.Category != filter.Category {
 			continue
@@ -103,7 +101,7 @@ func (s *Store) List(filter ExpenseFilter) []models.Expense {
 	return result
 }
 
-func (s *Store) Get(id string) (models.Expense, error) {
+func (s *Store) Get(id string) (Expense, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -112,18 +110,18 @@ func (s *Store) Get(id string) (models.Expense, error) {
 			return expense, nil
 		}
 	}
-	return models.Expense{}, ErrNotFound
+	return Expense{}, ErrNotFound
 }
 
-func (s *Store) Create(input ExpenseInput) (models.Expense, error) {
+func (s *Store) Create(input ExpenseInput) (Expense, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now().UTC()
-	expense := models.Expense{
+	expense := Expense{
 		ID:        newID(),
 		Amount:    input.Amount,
-		Category:  normalizeCategory(input.Category),
+		Category:  normalizeStoreCategory(input.Category),
 		Note:      strings.TrimSpace(input.Note),
 		Date:      input.Date.UTC(),
 		CreatedAt: now,
@@ -134,12 +132,12 @@ func (s *Store) Create(input ExpenseInput) (models.Expense, error) {
 
 	s.expenses = append(s.expenses, expense)
 	if err := s.persistLocked(); err != nil {
-		return models.Expense{}, err
+		return Expense{}, err
 	}
 	return expense, nil
 }
 
-func (s *Store) Update(id string, input ExpenseInput) (models.Expense, error) {
+func (s *Store) Update(id string, input ExpenseInput) (Expense, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -148,18 +146,18 @@ func (s *Store) Update(id string, input ExpenseInput) (models.Expense, error) {
 			continue
 		}
 		expense.Amount = input.Amount
-		expense.Category = normalizeCategory(input.Category)
+		expense.Category = normalizeStoreCategory(input.Category)
 		expense.Note = strings.TrimSpace(input.Note)
 		if !input.Date.IsZero() {
 			expense.Date = input.Date.UTC()
 		}
 		s.expenses[i] = expense
 		if err := s.persistLocked(); err != nil {
-			return models.Expense{}, err
+			return Expense{}, err
 		}
 		return expense, nil
 	}
-	return models.Expense{}, ErrNotFound
+	return Expense{}, ErrNotFound
 }
 
 func (s *Store) Delete(id string) error {
@@ -176,11 +174,11 @@ func (s *Store) Delete(id string) error {
 	return ErrNotFound
 }
 
-func (s *Store) Stats(period string, now time.Time) models.Stats {
+func (s *Store) Stats(period string, now time.Time) Stats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	stats := models.Stats{
+	stats := Stats{
 		TotalExpenses: len(s.expenses),
 		Period:        period,
 	}
@@ -202,9 +200,9 @@ func (s *Store) Stats(period string, now time.Time) models.Stats {
 		}
 	}
 
-	stats.ByCategory = make([]models.CategoryTotal, 0, len(categoryTotals))
+	stats.ByCategory = make([]CategoryTotal, 0, len(categoryTotals))
 	for category, total := range categoryTotals {
-		stats.ByCategory = append(stats.ByCategory, models.CategoryTotal{Category: category, Total: total})
+		stats.ByCategory = append(stats.ByCategory, CategoryTotal{Category: category, Total: total})
 	}
 	sort.Slice(stats.ByCategory, func(i, j int) bool {
 		return stats.ByCategory[i].Total > stats.ByCategory[j].Total
@@ -215,9 +213,9 @@ func (s *Store) Stats(period string, now time.Time) models.Stats {
 		dates = append(dates, day)
 	}
 	sort.Strings(dates)
-	stats.Trend = make([]models.DailyTotal, 0, len(dates))
+	stats.Trend = make([]DailyTotal, 0, len(dates))
 	for _, day := range dates {
-		stats.Trend = append(stats.Trend, models.DailyTotal{Date: day, Total: trendTotals[day]})
+		stats.Trend = append(stats.Trend, DailyTotal{Date: day, Total: trendTotals[day]})
 	}
 
 	return stats
@@ -246,7 +244,7 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-func normalizeCategory(category string) string {
+func normalizeStoreCategory(category string) string {
 	cat := strings.ToLower(strings.TrimSpace(category))
 	if cat == "" {
 		return "other"

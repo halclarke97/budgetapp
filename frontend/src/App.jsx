@@ -31,16 +31,29 @@ const baseForm = {
   date: new Date().toISOString().slice(0, 10),
 }
 
+const recurringBaseForm = {
+  amount: '',
+  category: 'other',
+  note: '',
+  frequency: 'monthly',
+  startDate: new Date().toISOString().slice(0, 10),
+  endDate: '',
+}
+
 export default function App() {
   const [expenses, setExpenses] = useState([])
   const [categories, setCategories] = useState([])
   const [stats, setStats] = useState(null)
+  const [recurringPatterns, setRecurringPatterns] = useState([])
+  const [upcomingRecurring, setUpcomingRecurring] = useState([])
   const [period, setPeriod] = useState('month')
   const [filters, setFilters] = useState({ category: '', from: '', to: '' })
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editingExpense, setEditingExpense] = useState(null)
+  const [recurringModalOpen, setRecurringModalOpen] = useState(false)
+  const [editingRecurring, setEditingRecurring] = useState(null)
 
   const categoryMap = useMemo(() => {
     return categories.reduce((acc, category) => {
@@ -63,15 +76,19 @@ export default function App() {
       if (filters.from) query.set('from', filters.from)
       if (filters.to) query.set('to', filters.to)
 
-      const [categoriesData, expensesData, statsData] = await Promise.all([
+      const [categoriesData, expensesData, statsData, patternsData, upcomingData] = await Promise.all([
         apiRequest('/api/categories'),
         apiRequest(`/api/expenses${query.toString() ? `?${query.toString()}` : ''}`),
         apiRequest(`/api/stats?period=${period}`),
+        apiRequest('/api/recurring-expenses'),
+        apiRequest('/api/recurring-expenses/upcoming?days=30'),
       ])
 
       setCategories(categoriesData)
       setExpenses(expensesData)
       setStats(statsData)
+      setRecurringPatterns(patternsData)
+      setUpcomingRecurring(upcomingData)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -87,6 +104,11 @@ export default function App() {
   function openEditModal(expense) {
     setEditingExpense(expense)
     setModalOpen(true)
+  }
+
+  function openEditRecurringModal(pattern) {
+    setEditingRecurring(pattern)
+    setRecurringModalOpen(true)
   }
 
   async function saveExpense(formValues) {
@@ -116,6 +138,27 @@ export default function App() {
     await refreshAll()
   }
 
+  async function saveRecurringPattern(formValues) {
+    const payload = {
+      amount: Number(formValues.amount),
+      category: formValues.category,
+      note: formValues.note,
+      frequency: formValues.frequency,
+      start_date: formValues.startDate,
+      end_date: formValues.endDate || '',
+    }
+
+    await apiRequest(`/api/recurring-expenses/${editingRecurring.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+
+    setRecurringModalOpen(false)
+    setEditingRecurring(null)
+    await refreshAll()
+  }
+
   async function deleteExpense(id) {
     if (!window.confirm('Delete this expense?')) {
       return
@@ -123,6 +166,19 @@ export default function App() {
 
     try {
       await apiRequest(`/api/expenses/${id}`, { method: 'DELETE' })
+      await refreshAll()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  async function deactivateRecurringPattern(id) {
+    if (!window.confirm('Deactivate this recurring pattern?')) {
+      return
+    }
+
+    try {
+      await apiRequest(`/api/recurring-expenses/${id}`, { method: 'DELETE' })
       await refreshAll()
     } catch (err) {
       setError(err.message)
@@ -184,6 +240,108 @@ export default function App() {
           )}
           hint="Per transaction"
         />
+      </section>
+
+      <section className="mb-6 grid gap-6 xl:grid-cols-[1.3fr_1fr]">
+        <div className="card">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Upcoming recurring (30 days)</h2>
+            <span className="text-xs uppercase tracking-[0.15em] text-slate-500">
+              {upcomingRecurring.length} occurrence{upcomingRecurring.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          {isLoading ? (
+            <p className="text-slate-500">Loading upcoming occurrences...</p>
+          ) : upcomingRecurring.length === 0 ? (
+            <p className="text-slate-500">No upcoming recurring expenses in the next 30 days.</p>
+          ) : (
+            <div className="overflow-auto">
+              <table className="min-w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-slate-600">
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Category</th>
+                    <th className="px-3 py-2">Note</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {upcomingRecurring.map((occurrence) => (
+                    <tr
+                      key={`${occurrence.pattern_id}-${occurrence.date}`}
+                      className="border-b border-slate-100 last:border-b-0"
+                    >
+                      <td className="px-3 py-3">{dateFormatter.format(new Date(occurrence.date))}</td>
+                      <td className="px-3 py-3">
+                        {categoryMap[occurrence.category]?.name ?? occurrence.category}
+                      </td>
+                      <td className="px-3 py-3">{occurrence.note || '-'}</td>
+                      <td className="px-3 py-3 text-right font-semibold">{money.format(occurrence.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        <div className="card">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Recurring patterns</h2>
+            <span className="text-xs uppercase tracking-[0.15em] text-slate-500">
+              {recurringPatterns.length} total
+            </span>
+          </div>
+          {isLoading ? (
+            <p className="text-slate-500">Loading recurring patterns...</p>
+          ) : recurringPatterns.length === 0 ? (
+            <p className="text-slate-500">No recurring patterns yet. Create one from the expense flow.</p>
+          ) : (
+            <ul className="max-h-[24rem] space-y-3 overflow-auto pr-1">
+              {recurringPatterns.map((pattern) => (
+                <li key={pattern.id} className="rounded-xl border border-slate-200 px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-ink">{pattern.note || 'Untitled recurring expense'}</p>
+                      <p className="text-sm text-slate-500">
+                        {categoryMap[pattern.category]?.name ?? pattern.category} • {formatFrequency(pattern.frequency)}
+                      </p>
+                    </div>
+                    <p className="text-lg font-semibold">{money.format(pattern.amount)}</p>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm text-slate-500">
+                      Next run: {dateFormatter.format(new Date(pattern.next_run_date))}
+                    </p>
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                        pattern.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {pattern.active ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-sky-700"
+                      onClick={() => openEditRecurringModal(pattern)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-red-600 disabled:cursor-not-allowed disabled:text-slate-400"
+                      onClick={() => deactivateRecurringPattern(pattern.id)}
+                      disabled={!pattern.active}
+                    >
+                      Deactivate
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       <section className="mb-6 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
@@ -339,6 +497,18 @@ export default function App() {
           onSave={saveExpense}
         />
       ) : null}
+
+      {recurringModalOpen && editingRecurring ? (
+        <RecurringPatternModal
+          categories={categories}
+          initialValues={editingRecurring}
+          onClose={() => {
+            setRecurringModalOpen(false)
+            setEditingRecurring(null)
+          }}
+          onSave={saveRecurringPattern}
+        />
+      ) : null}
     </div>
   )
 }
@@ -362,7 +532,7 @@ function ExpenseModal({ categories, initialValues, onClose, onSave }) {
       amount: String(initialValues.amount),
       category: initialValues.category,
       note: initialValues.note ?? '',
-      date: new Date(initialValues.date).toISOString().slice(0, 10),
+      date: toDateInput(initialValues.date),
     }
   })
   const [submitting, setSubmitting] = useState(false)
@@ -458,6 +628,165 @@ function ExpenseModal({ categories, initialValues, onClose, onSave }) {
       </div>
     </div>
   )
+}
+
+function RecurringPatternModal({ categories, initialValues, onClose, onSave }) {
+  const [form, setForm] = useState(() => {
+    if (!initialValues) {
+      return recurringBaseForm
+    }
+    return {
+      amount: String(initialValues.amount),
+      category: initialValues.category,
+      note: initialValues.note ?? '',
+      frequency: initialValues.frequency ?? 'monthly',
+      startDate: toDateInput(initialValues.start_date),
+      endDate: initialValues.end_date ? toDateInput(initialValues.end_date) : '',
+    }
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+
+    if (!form.amount || Number(form.amount) <= 0) {
+      setError('Amount must be greater than zero.')
+      return
+    }
+    if (!form.startDate) {
+      setError('Start date is required.')
+      return
+    }
+    if (form.endDate && form.endDate < form.startDate) {
+      setError('End date cannot be before start date.')
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      setError('')
+      await onSave(form)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-900/45 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <h3 className="text-2xl font-bold text-ink">Edit recurring pattern</h3>
+        <form className="mt-4 space-y-3" onSubmit={handleSubmit}>
+          <label className="block text-sm font-semibold text-slate-600" htmlFor="recurring-amount">
+            Amount
+          </label>
+          <input
+            id="recurring-amount"
+            className="input w-full"
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.amount}
+            onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
+          />
+
+          <label className="block text-sm font-semibold text-slate-600" htmlFor="recurring-category">
+            Category
+          </label>
+          <select
+            id="recurring-category"
+            className="input w-full"
+            value={form.category}
+            onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
+          >
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+
+          <label className="block text-sm font-semibold text-slate-600" htmlFor="recurring-frequency">
+            Frequency
+          </label>
+          <select
+            id="recurring-frequency"
+            className="input w-full"
+            value={form.frequency}
+            onChange={(event) => setForm((prev) => ({ ...prev, frequency: event.target.value }))}
+          >
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+
+          <label className="block text-sm font-semibold text-slate-600" htmlFor="recurring-note">
+            Note
+          </label>
+          <input
+            id="recurring-note"
+            className="input w-full"
+            type="text"
+            value={form.note}
+            onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))}
+            placeholder="Subscription, rent, membership..."
+          />
+
+          <label className="block text-sm font-semibold text-slate-600" htmlFor="recurring-start-date">
+            Start date
+          </label>
+          <input
+            id="recurring-start-date"
+            className="input w-full"
+            type="date"
+            value={form.startDate}
+            onChange={(event) => setForm((prev) => ({ ...prev, startDate: event.target.value }))}
+          />
+
+          <label className="block text-sm font-semibold text-slate-600" htmlFor="recurring-end-date">
+            End date (optional)
+          </label>
+          <input
+            id="recurring-end-date"
+            className="input w-full"
+            type="date"
+            value={form.endDate}
+            onChange={(event) => setForm((prev) => ({ ...prev, endDate: event.target.value }))}
+          />
+
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+          <div className="mt-6 flex justify-end gap-3">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary" disabled={submitting}>
+              {submitting ? 'Saving...' : 'Save pattern'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function toDateInput(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+  return date.toISOString().slice(0, 10)
+}
+
+function formatFrequency(value) {
+  if (value === 'weekly') {
+    return 'Weekly'
+  }
+  if (value === 'monthly') {
+    return 'Monthly'
+  }
+  return value
 }
 
 async function apiRequest(path, options = {}) {

@@ -1,1 +1,5 @@
-[]
+{
+  "version": 2,
+  "expenses": [],
+  "recurring_patterns": []
+}

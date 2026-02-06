@@ -34,7 +34,7 @@ echo "--- Backend Checks ---"
 if [[ -d "backend" ]]; then
     check "Backend directory exists" "true"
     check "Go module exists" "[[ -f backend/go.mod ]]"
-    check "Backend builds" "cd backend && go build -o /tmp/budgetapp-server ./..."
+    check "Backend builds" "(cd backend && go build -o /tmp/budgetapp-server ./...)"
     check "Backend has main.go" "[[ -f backend/main.go || -f backend/cmd/server/main.go ]]"
 else
     check "Backend directory exists" "false"
@@ -47,7 +47,7 @@ if [[ -d "frontend" ]]; then
     check "Frontend directory exists" "true"
     check "package.json exists" "[[ -f frontend/package.json ]]"
     check "Node modules installed" "[[ -d frontend/node_modules ]] || (cd frontend && npm install)"
-    check "Frontend builds" "cd frontend && npm run build"
+    check "Frontend builds" "(cd frontend && npm run build)"
 else
     check "Frontend directory exists" "false"
 fi

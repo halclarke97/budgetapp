@@ -33,6 +33,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize store: %v", err)
 	}
+	if _, err := st.SweepRecurringExpenses(time.Now().UTC()); err != nil {
+		log.Fatalf("failed to sweep recurring expenses: %v", err)
+	}
 
 	server := &apiServer{
 		store:      st,
@@ -63,6 +66,10 @@ func main() {
 func (s *apiServer) handleExpenses(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		if _, err := s.store.SweepRecurringExpenses(time.Now().UTC()); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to sweep recurring expenses")
+			return
+		}
 		filter, err := parseExpenseFilter(r)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -149,6 +156,10 @@ func (s *apiServer) handleCategories(w http.ResponseWriter, r *http.Request) {
 func (s *apiServer) handleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if _, err := s.store.SweepRecurringExpenses(time.Now().UTC()); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to sweep recurring expenses")
 		return
 	}
 	period := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("period")))

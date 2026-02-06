@@ -29,6 +29,22 @@ const baseForm = {
   category: 'other',
   note: '',
   date: new Date().toISOString().slice(0, 10),
+  recurringEnabled: false,
+  recurringFrequency: 'weekly',
+  recurringEndDate: '',
+}
+
+const recurringFrequencies = ['weekly', 'monthly']
+
+function toDateInputValue(value) {
+  if (!value) {
+    return ''
+  }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return ''
+  }
+  return parsed.toISOString().slice(0, 10)
 }
 
 export default function App() {
@@ -90,11 +106,20 @@ export default function App() {
   }
 
   async function saveExpense(formValues) {
+    const recurring = formValues.recurringEnabled
+      ? {
+          enabled: true,
+          frequency: formValues.recurringFrequency,
+          ...(formValues.recurringEndDate ? { end_date: formValues.recurringEndDate } : {}),
+        }
+      : { enabled: false }
+
     const payload = {
       amount: Number(formValues.amount),
       category: formValues.category,
       note: formValues.note,
       date: formValues.date,
+      recurring,
     }
 
     if (editingExpense) {
@@ -358,30 +383,78 @@ function ExpenseModal({ categories, initialValues, onClose, onSave }) {
     if (!initialValues) {
       return baseForm
     }
+    const initialRecurring = initialValues.recurring ?? {}
+    const isRecurring = Boolean(initialRecurring.enabled)
     return {
       amount: String(initialValues.amount),
       category: initialValues.category,
       note: initialValues.note ?? '',
-      date: new Date(initialValues.date).toISOString().slice(0, 10),
+      date: toDateInputValue(initialValues.date) || baseForm.date,
+      recurringEnabled: isRecurring,
+      recurringFrequency: recurringFrequencies.includes(initialRecurring.frequency)
+        ? initialRecurring.frequency
+        : baseForm.recurringFrequency,
+      recurringEndDate: toDateInputValue(initialRecurring.end_date),
     }
   })
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
+  const [errors, setErrors] = useState({})
+
+  function validateForm(currentForm) {
+    const nextErrors = {}
+    if (!currentForm.amount || Number(currentForm.amount) <= 0) {
+      nextErrors.amount = 'Amount must be greater than zero.'
+    }
+    if (!currentForm.date) {
+      nextErrors.date = 'Date is required.'
+    }
+
+    if (currentForm.recurringEnabled) {
+      if (!recurringFrequencies.includes(currentForm.recurringFrequency)) {
+        nextErrors.recurringFrequency = 'Choose weekly or monthly.'
+      }
+
+      if (currentForm.recurringEndDate) {
+        const expenseDate = new Date(`${currentForm.date}T00:00:00Z`)
+        const endDate = new Date(`${currentForm.recurringEndDate}T00:00:00Z`)
+        if (Number.isNaN(endDate.getTime())) {
+          nextErrors.recurringEndDate = 'Enter a valid end date.'
+        } else if (!Number.isNaN(expenseDate.getTime()) && endDate < expenseDate) {
+          nextErrors.recurringEndDate = 'End date must be on or after the expense date.'
+        }
+      }
+    }
+
+    return nextErrors
+  }
+
+  function setFieldValue(field, value) {
+    setForm((prev) => ({ ...prev, [field]: value }))
+    setErrors((prev) => {
+      if (!prev[field]) {
+        return prev
+      }
+      const next = { ...prev }
+      delete next[field]
+      return next
+    })
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
 
-    if (!form.amount || Number(form.amount) <= 0) {
-      setError('Amount must be greater than zero.')
+    const nextErrors = validateForm(form)
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors)
       return
     }
 
     try {
       setSubmitting(true)
-      setError('')
+      setErrors({})
       await onSave(form)
     } catch (err) {
-      setError(err.message)
+      setErrors({ form: err.message })
     } finally {
       setSubmitting(false)
     }
@@ -402,8 +475,9 @@ function ExpenseModal({ categories, initialValues, onClose, onSave }) {
             min="0"
             step="0.01"
             value={form.amount}
-            onChange={(event) => setForm((prev) => ({ ...prev, amount: event.target.value }))}
+            onChange={(event) => setFieldValue('amount', event.target.value)}
           />
+          {errors.amount ? <p className="text-sm text-red-600">{errors.amount}</p> : null}
 
           <label className="block text-sm font-semibold text-slate-600" htmlFor="category">
             Category
@@ -412,7 +486,7 @@ function ExpenseModal({ categories, initialValues, onClose, onSave }) {
             id="category"
             className="input w-full"
             value={form.category}
-            onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))}
+            onChange={(event) => setFieldValue('category', event.target.value)}
           >
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
@@ -429,7 +503,7 @@ function ExpenseModal({ categories, initialValues, onClose, onSave }) {
             className="input w-full"
             type="text"
             value={form.note}
-            onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))}
+            onChange={(event) => setFieldValue('note', event.target.value)}
             placeholder="Coffee, rent, groceries..."
           />
 
@@ -441,10 +515,59 @@ function ExpenseModal({ categories, initialValues, onClose, onSave }) {
             className="input w-full"
             type="date"
             value={form.date}
-            onChange={(event) => setForm((prev) => ({ ...prev, date: event.target.value }))}
+            onChange={(event) => setFieldValue('date', event.target.value)}
           />
+          {errors.date ? <p className="text-sm text-red-600">{errors.date}</p> : null}
 
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700" htmlFor="is-recurring">
+              <input
+                id="is-recurring"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={form.recurringEnabled}
+                onChange={(event) => setFieldValue('recurringEnabled', event.target.checked)}
+              />
+              Make this recurring
+            </label>
+
+            {form.recurringEnabled ? (
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-slate-600" htmlFor="recurring-frequency">
+                    Frequency
+                  </label>
+                  <select
+                    id="recurring-frequency"
+                    className="input w-full"
+                    value={form.recurringFrequency}
+                    onChange={(event) => setFieldValue('recurringFrequency', event.target.value)}
+                  >
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                  {errors.recurringFrequency ? <p className="text-sm text-red-600">{errors.recurringFrequency}</p> : null}
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-slate-600" htmlFor="recurring-end-date">
+                    End date (optional)
+                  </label>
+                  <input
+                    id="recurring-end-date"
+                    className="input w-full"
+                    type="date"
+                    value={form.recurringEndDate}
+                    min={form.date || undefined}
+                    onChange={(event) => setFieldValue('recurringEndDate', event.target.value)}
+                  />
+                  {errors.recurringEndDate ? <p className="text-sm text-red-600">{errors.recurringEndDate}</p> : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          {errors.form ? <p className="text-sm text-red-600">{errors.form}</p> : null}
 
           <div className="mt-6 flex justify-end gap-3">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>

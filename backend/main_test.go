@@ -38,6 +38,11 @@ func TestExpenseAPIFlow(t *testing.T) {
 		"category": "food",
 		"note":     "Lunch",
 		"date":     time.Now().UTC().Format("2006-01-02"),
+		"recurring": map[string]any{
+			"enabled":   true,
+			"frequency": "weekly",
+			"end_date":  time.Now().UTC().AddDate(0, 1, 0).Format("2006-01-02"),
+		},
 	}
 	created := doJSON[Expense](t, mux, http.MethodPost, "/api/expenses", postBody, http.StatusCreated)
 	if created.ID == "" {
@@ -63,6 +68,9 @@ func TestExpenseAPIFlow(t *testing.T) {
 		"category": "food",
 		"note":     "Dinner",
 		"date":     time.Now().UTC().Format("2006-01-02"),
+		"recurring": map[string]any{
+			"enabled": false,
+		},
 	}
 	updated := doJSON[Expense](t, mux, http.MethodPut, "/api/expenses/"+created.ID, updateBody, http.StatusOK)
 	if updated.Note != "Dinner" || updated.Amount != 20 {

@@ -1,0 +1,133 @@
+[
+  {
+    "id": "budget-limits-data-model-and-store-persistence",
+    "title": "Implement budget limit data model and persistence support",
+    "description": "Add a BudgetLimit model keyed by category_id and extend JSON store persistence so budget limits are loaded and saved alongside expenses and recurring patterns.",
+    "acceptance_criteria": [
+      "Store layer supports create/update/delete/list operations for budget limits",
+      "Persisted data file includes budget limit records without breaking existing data",
+      "Existing expenses and recurring patterns still load correctly after persistence changes"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#design-budget-limits",
+      "#backend"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-budget-limits-data-model"
+    }
+  },
+  {
+    "id": "budget-limits-api-endpoints-and-validation",
+    "title": "Add budget limit API endpoints and request validation",
+    "description": "Implement GET/PUT/DELETE budget limit endpoints by category with validation for category existence and non-negative monthly limits.",
+    "acceptance_criteria": [
+      "GET /api/budget-limits returns all configured category limits",
+      "PUT /api/budget-limits/:category_id creates or updates the category limit",
+      "DELETE /api/budget-limits/:category_id removes the category limit",
+      "Invalid category IDs or limit payloads return actionable 400 responses"
+    ],
+    "depends_on": [
+      "budget-limits-data-model-and-store-persistence"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#design-budget-limits",
+      "#backend"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-budget-limits-api"
+    }
+  },
+  {
+    "id": "stats-budget-status-enrichment",
+    "title": "Enhance stats endpoint with per-category budget status",
+    "description": "Extend GET /api/stats to include current-month spent amount, configured limit, percent used, and status (ok/warning/exceeded) for each category.",
+    "acceptance_criteria": [
+      "Stats payload includes budget status per category for the current month",
+      "Status is \"ok\" below 80%, \"warning\" from 80% to 100%, and \"exceeded\" above 100%",
+      "Categories without limits return null limit and percent while still reporting spent totals",
+      "Budget status calculations are deterministic across repeated requests"
+    ],
+    "depends_on": [
+      "budget-limits-data-model-and-store-persistence"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#design-budget-limits",
+      "#backend"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-budget-limits-stats"
+    }
+  },
+  {
+    "id": "frontend-budget-settings-panel",
+    "title": "Build budget settings UI for per-category monthly limits",
+    "description": "Add a budget settings panel that lists categories, shows current limits, and supports set/update/delete actions via budget limit APIs.",
+    "acceptance_criteria": [
+      "UI lists all categories with current monthly budget values",
+      "Users can set or update a category budget limit from the panel",
+      "Users can remove a category budget limit",
+      "API validation errors are surfaced inline in the settings UI"
+    ],
+    "depends_on": [
+      "budget-limits-api-endpoints-and-validation"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#design-budget-limits",
+      "#frontend"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-frontend-budget-settings"
+    }
+  },
+  {
+    "id": "frontend-category-budget-progress-and-warnings",
+    "title": "Add dashboard budget progress bars and warning states",
+    "description": "Update category dashboard cards to show monthly budget progress bars, threshold color coding, and warning indicators based on stats budget status.",
+    "acceptance_criteria": [
+      "Category cards show spent vs limit progress when a budget is configured",
+      "Progress visuals are green below 80%, yellow from 80% to 100%, and red above 100%",
+      "Warning indicators are visible for categories at or above 80% usage",
+      "Cards render sensible empty-state behavior for categories without limits"
+    ],
+    "depends_on": [
+      "stats-budget-status-enrichment"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#design-budget-limits",
+      "#frontend"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-frontend-budget-warnings"
+    }
+  },
+  {
+    "id": "budget-limits-regression-and-harness-verification",
+    "title": "Add budget limit regression coverage and harness verification",
+    "description": "Expand automated and harness checks for budget limit persistence, API behavior, stats thresholding, and frontend warning rendering while preserving existing behavior.",
+    "acceptance_criteria": [
+      "Backend tests cover budget limit CRUD, validation, and persistence reload",
+      "Stats tests verify 80% warning and 100% exceeded threshold behavior",
+      "Frontend checks validate progress and warning rendering for configured limits",
+      "Harness includes an end-to-end scenario for set, update, exceed, and delete budget limits"
+    ],
+    "depends_on": [
+      "budget-limits-api-endpoints-and-validation",
+      "stats-budget-status-enrichment",
+      "frontend-budget-settings-panel",
+      "frontend-category-budget-progress-and-warnings"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#design-budget-limits",
+      "#acceptance-criteria"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-budget-limits-regression"
+    }
+  }
+]

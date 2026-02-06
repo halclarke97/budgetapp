@@ -1,0 +1,134 @@
+[
+  {
+    "id": "budget-limits-data-model-and-store",
+    "title": "Add budget limit data model and persistence support",
+    "description": "Introduce a BudgetLimit model keyed by category with monthly limit amount, and extend store persistence so budget limits are loaded/saved alongside expenses.",
+    "acceptance_criteria": [
+      "BudgetLimit model exists with category and monthly_limit fields",
+      "Store persistence includes budget limits in the primary data envelope",
+      "Legacy data files without budget limits load successfully with safe defaults",
+      "Store layer exposes CRUD methods for budget limits"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#data-model-changes",
+      "#release-plan"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-budget-limits-model"
+    }
+  },
+  {
+    "id": "budget-limits-crud-api",
+    "title": "Implement budget limit CRUD API endpoints and validation",
+    "description": "Add REST endpoints for listing, creating, updating, and deleting budget limits, with category validation and non-negative numeric limit constraints.",
+    "acceptance_criteria": [
+      "GET/POST/PUT/DELETE /api/budget-limits endpoints are available",
+      "Requests with invalid category or invalid limit value return actionable 400 responses",
+      "Updating an existing category limit is idempotent and persists correctly",
+      "Deleting a budget limit removes it from subsequent reads"
+    ],
+    "depends_on": [
+      "budget-limits-data-model-and-store"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#backend-api-additions-and-changes",
+      "#functional-requirements"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-budget-limits-api"
+    }
+  },
+  {
+    "id": "stats-budget-status-enhancement",
+    "title": "Enhance stats responses with per-category budget status",
+    "description": "Extend stats computation to include monthly spend versus configured budget limit per category, including utilization percentage and warning status flags.",
+    "acceptance_criteria": [
+      "Stats payload includes budget_limit, spent_amount, utilization_pct, and status per category",
+      "Status values distinguish under_limit, approaching_limit, and over_limit",
+      "Approaching warning triggers at configured threshold and over-limit triggers when spend exceeds limit",
+      "Categories without configured limits return null/empty budget status without errors"
+    ],
+    "depends_on": [
+      "budget-limits-crud-api"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#functional-requirements",
+      "#backend-api-additions-and-changes"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-budget-limits-stats"
+    }
+  },
+  {
+    "id": "frontend-budget-settings-panel",
+    "title": "Build budget settings panel for per-category monthly limits",
+    "description": "Add frontend settings UI for configuring category budget limits, including create/edit/delete controls and validation messaging.",
+    "acceptance_criteria": [
+      "User can set a monthly budget limit for each category from the settings UI",
+      "User can edit and delete existing category budget limits",
+      "Client-side validation blocks invalid numeric inputs and shows inline errors",
+      "Successful changes refresh local dashboard state without full page reload"
+    ],
+    "depends_on": [
+      "budget-limits-crud-api"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#frontend-changes",
+      "#functional-requirements"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-frontend-budget-settings"
+    }
+  },
+  {
+    "id": "frontend-category-budget-progress-and-warnings",
+    "title": "Add category card budget progress bars and warning color states",
+    "description": "Update category cards to render budget utilization progress bars with color-coded warning states when approaching or exceeding monthly limits.",
+    "acceptance_criteria": [
+      "Each category card shows budget progress when a limit exists",
+      "Progress bars are color-coded for normal, approaching-limit, and over-limit states",
+      "Cards display clear text warning when spending approaches or exceeds the limit",
+      "Categories without limits render a neutral no-budget-configured state"
+    ],
+    "depends_on": [
+      "stats-budget-status-enhancement",
+      "frontend-budget-settings-panel"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#frontend-changes",
+      "#release-plan"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-frontend-budget-progress"
+    }
+  },
+  {
+    "id": "budget-limits-regression-and-harness-verification",
+    "title": "Add regression tests and harness checks for budget limits",
+    "description": "Expand backend/frontend regression coverage and harness scenarios for budget limit CRUD, stats status computation, and warning visualization behavior.",
+    "acceptance_criteria": [
+      "Backend tests cover budget limit CRUD validation and persistence behavior",
+      "Stats tests verify utilization and status transitions across threshold boundaries",
+      "Frontend tests cover settings panel flows and category warning rendering",
+      "Harness includes an end-to-end scenario for under-limit, approaching-limit, and over-limit categories"
+    ],
+    "depends_on": [
+      "stats-budget-status-enhancement",
+      "frontend-budget-settings-panel",
+      "frontend-category-budget-progress-and-warnings"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#verification-strategy",
+      "#risks-and-mitigations"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1_2-budget-limits-regression"
+    }
+  }
+]

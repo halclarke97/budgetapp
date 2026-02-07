@@ -1,0 +1,16 @@
+{
+  "expenses": [],
+  "recurring_patterns": [],
+  "categories": [
+    "food",
+    "transport",
+    "housing",
+    "utilities",
+    "entertainment",
+    "health",
+    "shopping",
+    "other"
+  ],
+  "next_expense_id": 1,
+  "next_pattern_id": 1
+}

@@ -1,0 +1,27 @@
+{
+  "id": "budgetapp-recurring-expense-enhancement",
+  "title": "Add recurring expense patterns",
+  "type": "implementation",
+  "status": "done",
+  "scope": {
+    "backend": [
+      "RecurringPattern model and JSON persistence",
+      "Recurring expense CRUD endpoints",
+      "Upcoming preview endpoint",
+      "Sweep function for due expense generation",
+      "Monthly edge-case handling for month-end dates"
+    ],
+    "frontend": [
+      "Recurring pattern management UI",
+      "Pause/resume and delete controls",
+      "Upcoming recurring expenses preview",
+      "Integration into existing expense and stats views"
+    ]
+  },
+  "acceptance_criteria": [
+    "Recurring pattern CRUD endpoints return expected responses",
+    "Sweep generates due expenses and advances next_run_date",
+    "Monthly recurrence preserves the intended day with month-end clamping",
+    "Frontend renders recurring controls and upcoming preview"
+  ]
+}

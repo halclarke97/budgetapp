@@ -1,0 +1,26 @@
+{
+  "id": "budgetapp-initial-implementation",
+  "title": "Implement BudgetApp core stack",
+  "type": "implementation",
+  "status": "done",
+  "scope": {
+    "backend": [
+      "Go REST API with expense CRUD endpoints",
+      "Category and stats endpoints",
+      "JSON-file persistence"
+    ],
+    "frontend": [
+      "React + Vite + Tailwind application",
+      "Expense entry form",
+      "Expense list with category and note filtering",
+      "Stats dashboard and category breakdown chart"
+    ]
+  },
+  "acceptance_criteria": [
+    "backend/go.mod and backend/main.go exist and build",
+    "frontend/package.json exists and npm run build succeeds",
+    "GET /api/expenses and POST /api/expenses work",
+    "GET /api/categories and GET /api/stats work",
+    "GET /healthz returns 200"
+  ]
+}

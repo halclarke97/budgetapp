@@ -1,0 +1,29 @@
+{
+  "id": "impl-stats-and-hardening",
+  "title": "Monthly Stats, Frontend Summary, and Integration Hardening",
+  "type": "implementation",
+  "status": "todo",
+  "description": "Implement monthly stats endpoint, build frontend summary panel, and complete integration-level testing and operational polish.",
+  "paths": [
+    "backend/internal/http/handlers/stats_handler.go",
+    "backend/internal/service/stats_service.go",
+    "backend/internal/service/stats_service_test.go",
+    "backend/internal/http/middleware/cors.go",
+    "backend/internal/http/middleware/logging.go",
+    "frontend/src/components/MonthlyStatsPanel.tsx",
+    "frontend/src/hooks/useMonthlyStats.ts",
+    "frontend/src/components/MonthlyStatsPanel.test.tsx",
+    "docs/README-local-dev.md"
+  ],
+  "depends_on": [
+    "impl-backend-api",
+    "impl-frontend-core"
+  ],
+  "acceptance_criteria": [
+    "GET /api/stats/monthly?month=YYYY-MM returns month total, category breakdown, and expense count.",
+    "Frontend displays monthly summary totals and category breakdown using backend stats data.",
+    "CORS allows frontend dev origin and request logging includes method/path/status/duration.",
+    "Core backend handlers and storage logic have automated test coverage.",
+    "End-to-end manual check confirms data persists across backend restarts."
+  ]
+}

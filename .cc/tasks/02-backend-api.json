@@ -1,0 +1,27 @@
+{
+  "id": "impl-backend-api",
+  "title": "Backend API: Categories and Expenses CRUD + Health",
+  "type": "implementation",
+  "status": "todo",
+  "description": "Implement REST endpoints for health check, category CRUD, and expense CRUD including validation, sorting, filtering, and error handling contracts.",
+  "paths": [
+    "backend/internal/http/router.go",
+    "backend/internal/http/handlers/health_handler.go",
+    "backend/internal/http/handlers/category_handler.go",
+    "backend/internal/http/handlers/expense_handler.go",
+    "backend/internal/http/errors/errors.go",
+    "backend/internal/service/category_service.go",
+    "backend/internal/service/expense_service.go",
+    "backend/internal/http/handlers/handlers_test.go"
+  ],
+  "depends_on": [
+    "impl-backend-foundation"
+  ],
+  "acceptance_criteria": [
+    "GET /healthz returns 200 with {\"status\":\"ok\"}.",
+    "Category endpoints support create/list/update/delete with validation and conflict handling.",
+    "Expense endpoints support create/list/update/delete with validation and category reference checks.",
+    "GET /api/expenses supports from/to/category_id filters and correct sort order.",
+    "Error responses follow {\"error\":{\"code\":string,\"message\":string}} with appropriate HTTP status codes."
+  ]
+}

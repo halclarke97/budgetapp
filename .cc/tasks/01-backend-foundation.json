@@ -1,0 +1,24 @@
+{
+  "id": "impl-backend-foundation",
+  "title": "Backend Foundation: Server, Models, and JSON Storage",
+  "type": "implementation",
+  "status": "todo",
+  "description": "Initialize Go backend structure, define core data models, and implement JSON file persistence with atomic writes and startup loading.",
+  "paths": [
+    "backend/go.mod",
+    "backend/cmd/server/main.go",
+    "backend/internal/config/config.go",
+    "backend/internal/models/models.go",
+    "backend/internal/storage/json_store.go",
+    "backend/internal/storage/json_store_test.go",
+    "backend/data/.gitkeep"
+  ],
+  "depends_on": [],
+  "acceptance_criteria": [
+    "Backend starts on configurable port with default 8080.",
+    "Storage path is configurable and defaults to ./data/budgetapp.json.",
+    "Startup creates missing data directory/file and loads existing data.",
+    "Writes use atomic temp-file-and-rename behavior.",
+    "Malformed JSON file causes startup failure with clear error output."
+  ]
+}

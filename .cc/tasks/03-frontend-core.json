@@ -1,0 +1,31 @@
+{
+  "id": "impl-frontend-core",
+  "title": "Frontend Core UI: Expense and Category Management",
+  "type": "implementation",
+  "status": "todo",
+  "description": "Build React + Vite + Tailwind UI for expense entry/edit/delete, category management, and expense filtering with backend API integration.",
+  "paths": [
+    "frontend/package.json",
+    "frontend/vite.config.ts",
+    "frontend/tailwind.config.js",
+    "frontend/src/main.tsx",
+    "frontend/src/App.tsx",
+    "frontend/src/api/client.ts",
+    "frontend/src/components/AppShell.tsx",
+    "frontend/src/components/ExpenseForm.tsx",
+    "frontend/src/components/ExpenseFilters.tsx",
+    "frontend/src/components/ExpenseList.tsx",
+    "frontend/src/components/CategoryManager.tsx",
+    "frontend/src/components/ui/ConfirmDialog.tsx"
+  ],
+  "depends_on": [
+    "impl-backend-api"
+  ],
+  "acceptance_criteria": [
+    "Users can create, edit, and delete expenses from the UI.",
+    "Users can create, edit, and delete categories from the UI.",
+    "Expense list supports filtering by date range and category.",
+    "Loading and error states are shown for API requests.",
+    "Delete actions require explicit user confirmation."
+  ]
+}

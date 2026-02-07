@@ -1,0 +1,138 @@
+[
+  {
+    "id": "backend-scaffold-and-store",
+    "title": "Create Go backend scaffold and JSON persistence store",
+    "description": "Initialize backend module, server bootstrap, health check endpoint, expense data models, and file-backed store with atomic writes.",
+    "acceptance_criteria": [
+      "backend/go.mod and backend/main.go exist and build with go build",
+      "GET /healthz returns 200 with status payload",
+      "Store persists expenses using versioned envelope JSON",
+      "Store safely handles concurrent read/write access"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#backend-architecture",
+      "#data-model",
+      "#persistence-model",
+      "#release-plan"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1-backend-scaffold-store"
+    }
+  },
+  {
+    "id": "backend-expense-crud-api",
+    "title": "Implement expense CRUD API and request validation",
+    "description": "Add list/create/get/update/delete handlers for expenses, route wiring, payload validation, and canonical error responses.",
+    "acceptance_criteria": [
+      "GET/POST /api/expenses are implemented",
+      "GET/PUT/DELETE /api/expenses/:id are implemented",
+      "Invalid payloads return 400 and missing IDs return 404",
+      "Expenses are returned sorted newest first"
+    ],
+    "depends_on": [
+      "backend-scaffold-and-store"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#functional-requirements",
+      "#api-contract",
+      "#verification-strategy"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1-backend-expense-crud"
+    }
+  },
+  {
+    "id": "backend-categories-and-stats",
+    "title": "Add categories and stats endpoints with backend tests",
+    "description": "Implement GET /api/categories and GET /api/stats, including category aggregation logic and regression tests for calculations.",
+    "acceptance_criteria": [
+      "GET /api/categories returns normalized category list",
+      "GET /api/stats returns total, count, average, and category totals",
+      "Stats values update correctly after create/update/delete operations",
+      "go test ./... includes handler and aggregation coverage"
+    ],
+    "depends_on": [
+      "backend-expense-crud-api"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#functional-requirements",
+      "#api-contract",
+      "#verification-strategy"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1-backend-categories-stats"
+    }
+  },
+  {
+    "id": "frontend-scaffold-and-api-client",
+    "title": "Scaffold React + Vite + Tailwind frontend and API client",
+    "description": "Create frontend project with Tailwind setup, base layout shell, and typed API client hooks for backend endpoints.",
+    "acceptance_criteria": [
+      "frontend/package.json and Tailwind configuration exist",
+      "npm run build succeeds for frontend",
+      "API client supports expenses, categories, and stats endpoints",
+      "Base dashboard layout renders with loading and error states"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#frontend-architecture",
+      "#ui-scope",
+      "#verification-strategy",
+      "#release-plan"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1-frontend-scaffold-client"
+    }
+  },
+  {
+    "id": "frontend-expense-workflows-and-insights",
+    "title": "Implement expense form, filtered list, and category breakdown dashboard",
+    "description": "Build the interactive expense entry form, category filter/list views, stats cards, and chart/summary for category totals.",
+    "acceptance_criteria": [
+      "User can create expenses from UI with inline validation",
+      "Expense list supports category filtering and item deletion",
+      "Dashboard displays totals, count, average, and category breakdown",
+      "Frontend refreshes data after create/update/delete without full page reload"
+    ],
+    "depends_on": [
+      "frontend-scaffold-and-api-client",
+      "backend-categories-and-stats"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#functional-requirements",
+      "#ui-scope",
+      "#ux-rules",
+      "#release-plan"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1-frontend-workflows-insights"
+    }
+  },
+  {
+    "id": "fullstack-verification-and-docs",
+    "title": "Run end-to-end verification and finalize run documentation",
+    "description": "Validate backend/frontend builds, run endpoint smoke checks, and update README with local run and test instructions.",
+    "acceptance_criteria": [
+      "Backend builds and tests pass",
+      "Frontend build passes",
+      "All required API endpoints verified via smoke checks",
+      "README documents setup, run commands, and key API routes"
+    ],
+    "depends_on": [
+      "backend-categories-and-stats",
+      "frontend-expense-workflows-and-insights"
+    ],
+    "reviewer": "sonnet",
+    "spec_refs": [
+      "#verification-strategy",
+      "#release-plan"
+    ],
+    "metadata": {
+      "external_key": "budgetapp-v1-fullstack-verification-docs"
+    }
+  }
+]

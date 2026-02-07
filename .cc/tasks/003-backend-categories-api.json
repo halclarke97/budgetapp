@@ -1,0 +1,30 @@
+{
+  "id": "backend-003",
+  "title": "Implement categories API and safety constraints",
+  "type": "implementation",
+  "status": "todo",
+  "summary": "Build category management endpoints including uniqueness and safe-delete constraints.",
+  "scope": [
+    "Implement GET/POST/PUT/DELETE for /api/v1/categories",
+    "Enforce unique category names (case-insensitive)",
+    "Validate required name and color fields",
+    "Block deletion for categories with existing expenses unless reassigned",
+    "Return conflict semantics for duplicate names"
+  ],
+  "dependencies": [
+    "backend-001",
+    "backend-002"
+  ],
+  "acceptance_criteria": [
+    "Category CRUD works as specified",
+    "Duplicate names return HTTP 409",
+    "Deletion safety rule is enforced",
+    "Default categories remain available"
+  ],
+  "deliverables": [
+    "Category handlers",
+    "Category service/repository logic",
+    "Category validation and conflict handling",
+    "Category endpoint tests"
+  ]
+}

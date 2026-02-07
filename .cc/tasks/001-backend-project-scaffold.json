@@ -1,0 +1,27 @@
+{
+  "id": "backend-001",
+  "title": "Backend project scaffold and persistence foundation",
+  "type": "implementation",
+  "status": "todo",
+  "summary": "Initialize Go API service structure, persistence setup, and shared request/response conventions.",
+  "scope": [
+    "Create backend project layout for handlers/services/repositories/models",
+    "Set up persistent storage for expenses/categories/budgets",
+    "Define shared error envelope and API version base path /api/v1",
+    "Add deterministic startup seeding for default categories",
+    "Add request logging and basic config"
+  ],
+  "dependencies": [],
+  "acceptance_criteria": [
+    "Service starts successfully with configured persistence",
+    "Default categories are seeded exactly once on first start",
+    "Shared error envelope format is available for all handlers",
+    "Data persists across restarts"
+  ],
+  "deliverables": [
+    "Backend scaffold and wiring",
+    "Persistence initialization",
+    "Seed/init module",
+    "Core API middleware"
+  ]
+}

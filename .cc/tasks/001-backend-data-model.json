@@ -1,0 +1,29 @@
+{
+  "id": "budgetapp-impl-001",
+  "metadata": {
+    "external_key": "BUDGETAPP-IMPL-001",
+    "status": "todo"
+  },
+  "title": "Implement backend data model and persistence",
+  "description": "Create backend persistence for categories and expenses, including schema/migrations, seed categories, repository methods, and validation/integrity rules described in the spec.",
+  "acceptance_criteria": [
+    "Data models for Category and Expense match docs/SPEC.md entity and validation requirements.",
+    "Persistence layer supports create/read/update/delete for categories and expenses.",
+    "Default categories are seeded on first run.",
+    "Deleting a category referenced by expenses is blocked with a deterministic conflict error."
+  ],
+  "category": "backend",
+  "priority": "high",
+  "task_type": "implementation",
+  "release_phase": "implementing",
+  "worker_type": "codex",
+  "paths": [
+    "backend/",
+    "docs/SPEC.md"
+  ],
+  "spec_refs": [
+    "#functional-requirements",
+    "#data-requirements",
+    "#non-functional-requirements"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "id": "budgetapp-impl-004",
+  "metadata": {
+    "external_key": "BUDGETAPP-IMPL-004",
+    "status": "todo"
+  },
+  "title": "Implement frontend insights and responsive behavior",
+  "description": "Implement the insights view consuming summary API data and ensure mobile/desktop usability, accessibility labeling, and complete loading/empty/error states for data surfaces.",
+  "acceptance_criteria": [
+    "Insights view shows total spend and per-category breakdown for selected date range.",
+    "Expense and insights flows are usable on mobile and desktop widths.",
+    "All forms and interactive controls are keyboard accessible with visible labels.",
+    "Each data view presents explicit loading, empty, and error UI states."
+  ],
+  "category": "frontend",
+  "priority": "medium",
+  "depends_on": [
+    "budgetapp-impl-003"
+  ],
+  "task_type": "implementation",
+  "release_phase": "implementing",
+  "worker_type": "codex",
+  "paths": [
+    "frontend/",
+    "docs/SPEC.md"
+  ],
+  "spec_refs": [
+    "#insights",
+    "#frontend-requirements",
+    "#non-functional-requirements"
+  ]
+}

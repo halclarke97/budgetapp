@@ -1,0 +1,32 @@
+{
+  "id": "budgetapp-impl-002",
+  "metadata": {
+    "external_key": "BUDGETAPP-IMPL-002",
+    "status": "todo"
+  },
+  "title": "Implement backend REST API endpoints",
+  "description": "Implement the `/api/v1` HTTP handlers for category management, expense management, and summary insights, including request validation and consistent error response mapping.",
+  "acceptance_criteria": [
+    "All endpoints listed in docs/SPEC.md API requirements are implemented under /api/v1.",
+    "Validation errors return 400 with structured field-level details.",
+    "Not-found resources return 404 and business-rule conflicts return 409.",
+    "Insights summary endpoint returns total spend, expense count, and category grouped totals for a date range."
+  ],
+  "category": "backend",
+  "priority": "high",
+  "depends_on": [
+    "budgetapp-impl-001"
+  ],
+  "task_type": "implementation",
+  "release_phase": "implementing",
+  "worker_type": "codex",
+  "paths": [
+    "backend/",
+    "docs/SPEC.md"
+  ],
+  "spec_refs": [
+    "#api-requirements",
+    "#functional-requirements",
+    "#insights"
+  ]
+}

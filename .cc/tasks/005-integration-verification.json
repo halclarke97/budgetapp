@@ -1,0 +1,35 @@
+{
+  "id": "budgetapp-impl-005",
+  "metadata": {
+    "external_key": "BUDGETAPP-IMPL-005",
+    "status": "todo"
+  },
+  "title": "Add integration coverage and verify success criteria",
+  "description": "Add or update automated tests and verification checks to confirm API behavior, UI flows, and success criteria defined in the spec for the initial implementation.",
+  "acceptance_criteria": [
+    "Automated coverage verifies critical API contract behavior for 400/404/409 and summary responses.",
+    "Automated or scripted verification covers core UI flows: add expense, filter expenses, and view insights.",
+    "Verification confirms success criteria in docs/SPEC.md are met.",
+    "Any implementation gaps discovered during verification are documented for follow-up."
+  ],
+  "category": "verification",
+  "priority": "medium",
+  "depends_on": [
+    "budgetapp-impl-002",
+    "budgetapp-impl-003",
+    "budgetapp-impl-004"
+  ],
+  "task_type": "implementation",
+  "release_phase": "implementing",
+  "worker_type": "codex",
+  "paths": [
+    "backend/",
+    "frontend/",
+    "docs/SPEC.md"
+  ],
+  "spec_refs": [
+    "#success-criteria",
+    "#api-requirements",
+    "#frontend-requirements"
+  ]
+}

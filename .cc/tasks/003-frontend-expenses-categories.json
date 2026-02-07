@@ -1,0 +1,32 @@
+{
+  "id": "budgetapp-impl-003",
+  "metadata": {
+    "external_key": "BUDGETAPP-IMPL-003",
+    "status": "todo"
+  },
+  "title": "Implement frontend expense and category workflows",
+  "description": "Build React views and client logic for listing expenses, creating/updating/deleting expenses, and managing categories with loading/empty/error and validation states.",
+  "acceptance_criteria": [
+    "Expense List view supports reverse-chronological rendering and filter controls for date range and category.",
+    "Add/Edit Expense form supports create and update with inline validation messages.",
+    "Category Management view supports list/create/update/delete and handles category-in-use conflict errors.",
+    "UI prevents duplicate submissions while requests are in-flight."
+  ],
+  "category": "frontend",
+  "priority": "high",
+  "depends_on": [
+    "budgetapp-impl-002"
+  ],
+  "task_type": "implementation",
+  "release_phase": "implementing",
+  "worker_type": "codex",
+  "paths": [
+    "frontend/",
+    "docs/SPEC.md"
+  ],
+  "spec_refs": [
+    "#frontend-requirements",
+    "#expense-management",
+    "#category-management"
+  ]
+}

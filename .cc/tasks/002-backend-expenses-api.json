@@ -1,0 +1,29 @@
+{
+  "id": "backend-002",
+  "title": "Implement expenses API and business rules",
+  "type": "implementation",
+  "status": "todo",
+  "summary": "Build CRUD endpoints for expenses with validation, filtering, and sorting behavior.",
+  "scope": [
+    "Implement GET/POST/GET by id/PUT/DELETE for /api/v1/expenses",
+    "Validate amount/date/category/note constraints",
+    "Support list filters for date range and category",
+    "Default list ordering by date descending",
+    "Return standardized error responses"
+  ],
+  "dependencies": [
+    "backend-001"
+  ],
+  "acceptance_criteria": [
+    "All expense endpoints function per spec",
+    "Invalid payloads return HTTP 400 with detailed validation messages",
+    "Missing records return HTTP 404",
+    "Expense list supports required filters and default sort"
+  ],
+  "deliverables": [
+    "Expense handlers",
+    "Expense service/repository logic",
+    "Expense request/response schemas",
+    "Expense endpoint tests"
+  ]
+}

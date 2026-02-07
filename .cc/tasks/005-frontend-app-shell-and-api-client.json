@@ -1,0 +1,26 @@
+{
+  "id": "frontend-001",
+  "title": "Frontend app shell, routing, and API client foundation",
+  "type": "implementation",
+  "status": "todo",
+  "summary": "Set up React app shell, route structure, shared API client, and common async/error UI states.",
+  "scope": [
+    "Create primary routes for Dashboard, Expenses, and Categories & Budgets",
+    "Implement shared API client for /api/v1 endpoints",
+    "Set up reusable loading/empty/error UI components",
+    "Configure responsive layout baseline for desktop and mobile"
+  ],
+  "dependencies": [],
+  "acceptance_criteria": [
+    "User can navigate between all required views",
+    "API client centralizes request and error handling",
+    "Each view supports loading, empty, and error states",
+    "Layout adapts to mobile and desktop widths"
+  ],
+  "deliverables": [
+    "Frontend app shell",
+    "Routing configuration",
+    "Shared API utilities",
+    "Shared state components"
+  ]
+}

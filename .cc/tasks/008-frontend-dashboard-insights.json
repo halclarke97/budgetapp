@@ -1,0 +1,31 @@
+{
+  "id": "frontend-004",
+  "title": "Frontend dashboard insights and monthly summaries",
+  "type": "implementation",
+  "status": "todo",
+  "summary": "Implement dashboard rendering of monthly totals, category breakdown, and recent expenses.",
+  "scope": [
+    "Display monthly total spend",
+    "Render spend-by-category visualization",
+    "Render budget versus actual summary",
+    "Show recent expenses widget with latest 10 records",
+    "Support selected month/date range refresh behavior"
+  ],
+  "dependencies": [
+    "frontend-001",
+    "frontend-002",
+    "frontend-003",
+    "backend-004"
+  ],
+  "acceptance_criteria": [
+    "Dashboard totals and breakdowns match backend insights",
+    "Recent expenses list shows latest records in correct order",
+    "Dashboard handles loading, empty, and error states",
+    "Month/date changes trigger consistent data reload"
+  ],
+  "deliverables": [
+    "Dashboard view components",
+    "Insights data bindings",
+    "Frontend dashboard tests"
+  ]
+}

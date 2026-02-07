@@ -1,0 +1,30 @@
+{
+  "id": "frontend-003",
+  "title": "Frontend category and monthly budget management",
+  "type": "implementation",
+  "status": "todo",
+  "summary": "Implement category CRUD UI and monthly budget editor interactions.",
+  "scope": [
+    "Build category management table/form",
+    "Enforce and display category uniqueness/conflict errors",
+    "Handle blocked delete scenarios with actionable messaging",
+    "Build monthly budget editor by category",
+    "Display variance indicators for each category budget"
+  ],
+  "dependencies": [
+    "frontend-001",
+    "backend-003",
+    "backend-004"
+  ],
+  "acceptance_criteria": [
+    "Users can manage categories and budgets from UI",
+    "Conflict and safety-rule backend errors are shown clearly",
+    "Budget values persist and rehydrate by selected month",
+    "Variance display aligns with API calculations"
+  ],
+  "deliverables": [
+    "Category management components",
+    "Budget editor components",
+    "Frontend tests for categories and budgets"
+  ]
+}

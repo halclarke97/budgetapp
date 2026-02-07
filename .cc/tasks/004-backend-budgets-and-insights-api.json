@@ -1,0 +1,30 @@
+{
+  "id": "backend-004",
+  "title": "Implement budgets and insights endpoints",
+  "type": "implementation",
+  "status": "todo",
+  "summary": "Implement monthly budget upsert and reporting endpoints for summary and monthly insights.",
+  "scope": [
+    "Implement GET /api/v1/budgets?month=YYYY-MM",
+    "Implement PUT /api/v1/budgets/{categoryId}?month=YYYY-MM (upsert)",
+    "Implement GET /api/v1/insights/summary and /api/v1/insights/monthly",
+    "Compute budget variance as budget minus actual",
+    "Provide spend aggregation by category and period"
+  ],
+  "dependencies": [
+    "backend-001",
+    "backend-002",
+    "backend-003"
+  ],
+  "acceptance_criteria": [
+    "Budget upsert behavior enforces one record per category/month",
+    "Insights endpoints return accurate totals and category breakdowns",
+    "Variance values are correct for over/under budget cases",
+    "Validation errors for malformed month/date queries return HTTP 400"
+  ],
+  "deliverables": [
+    "Budget handlers/services/repositories",
+    "Insights aggregation logic",
+    "Budget and insights endpoint tests"
+  ]
+}

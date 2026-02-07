@@ -1,0 +1,31 @@
+{
+  "id": "frontend-002",
+  "title": "Frontend expense entry and expense list experience",
+  "type": "implementation",
+  "status": "todo",
+  "summary": "Implement expense create/edit/delete flows and filterable expense list with validation.",
+  "scope": [
+    "Build add/edit expense form with inline validation",
+    "Implement expense list with date/category filters",
+    "Default expense ordering by date descending",
+    "Add delete confirmation flow",
+    "Refresh list/dashboard data after successful mutations"
+  ],
+  "dependencies": [
+    "frontend-001",
+    "backend-002",
+    "backend-003"
+  ],
+  "acceptance_criteria": [
+    "Users can create, edit, and delete expenses from the UI",
+    "Validation prevents invalid amount/date/category input",
+    "List filtering and default sorting match specification",
+    "Mutations reflect in UI immediately or after deterministic refresh"
+  ],
+  "deliverables": [
+    "Expense form components",
+    "Expense list and filter controls",
+    "Mutation UX states",
+    "Frontend tests for expense flows"
+  ]
+}

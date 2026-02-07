@@ -1,0 +1,33 @@
+{
+  "id": "quality-001",
+  "title": "Cross-layer testing and MVP acceptance validation",
+  "type": "implementation",
+  "status": "todo",
+  "summary": "Implement and run backend, frontend, and end-to-end tests that prove MVP acceptance criteria.",
+  "scope": [
+    "Add backend unit/integration coverage for validation and endpoint behavior",
+    "Add frontend integration coverage for expense form, filtering, and budget variance",
+    "Implement end-to-end happy-path scenario from category creation to dashboard update",
+    "Document repeatable commands for running full validation suite"
+  ],
+  "dependencies": [
+    "backend-002",
+    "backend-003",
+    "backend-004",
+    "frontend-002",
+    "frontend-003",
+    "frontend-004"
+  ],
+  "acceptance_criteria": [
+    "Automated tests cover required scenarios in specification",
+    "Happy-path e2e flow passes consistently",
+    "Validation suite is runnable via documented commands",
+    "No blocking regressions in MVP user flows"
+  ],
+  "deliverables": [
+    "Backend test suites",
+    "Frontend test suites",
+    "End-to-end test scenario",
+    "Validation runbook"
+  ]
+}

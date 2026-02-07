@@ -1,0 +1,272 @@
+:root {
+  color: #13263a;
+  background: #f4f7f5;
+  font-family: 'Avenir Next', 'Segoe UI', sans-serif;
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+
+.sidebar {
+  background: linear-gradient(170deg, #13263a, #1f4f4f);
+  color: #ffffff;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.brand {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.nav-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.nav-link {
+  border-radius: 8px;
+  padding: 0.625rem 0.75rem;
+  color: rgba(255, 255, 255, 0.9);
+  transition: background-color 0.2s ease;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.main-content {
+  padding: 1.5rem;
+}
+
+.page {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.field-inline {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.field-inline span {
+  font-size: 0.9rem;
+  color: #51636b;
+}
+
+input,
+button {
+  font: inherit;
+}
+
+input {
+  border: 1px solid #c7d3d8;
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  background: #fff;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #d5dde0;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.panel h2 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+}
+
+.stat-panel .metric {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.muted {
+  color: #61727a;
+  margin: 0.3rem 0 0;
+}
+
+.dashboard-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.full-width {
+  grid-column: 1 / -1;
+}
+
+.two-column-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.filters {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.filters label {
+  display: grid;
+  gap: 0.35rem;
+  color: #44545b;
+}
+
+.list-reset {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.data-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.data-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e4ecef;
+}
+
+.data-list li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 999px;
+  margin-right: 0.45rem;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.btn {
+  border: 0;
+  border-radius: 8px;
+  padding: 0.55rem 0.85rem;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: #1f4f4f;
+  color: #fff;
+}
+
+.async-state {
+  text-align: center;
+  background: #fff;
+  border: 1px solid #d5dde0;
+  border-radius: 12px;
+  padding: 2rem 1rem;
+}
+
+.async-state h3 {
+  margin: 0;
+}
+
+.async-state p {
+  margin: 0.5rem 0 1rem;
+  color: #55666e;
+}
+
+.loading-spinner {
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 2px solid #bfd1d7;
+  border-top-color: #1f4f4f;
+  border-radius: 999px;
+  margin: 0 auto 0.75rem;
+  animation: spin 0.7s linear infinite;
+}
+
+.success {
+  color: #1d7a3d;
+}
+
+.danger {
+  color: #ad2d2d;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    padding: 1rem;
+    gap: 0.8rem;
+  }
+
+  .nav-list {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(120px, 1fr);
+    overflow-x: auto;
+  }
+
+  .main-content {
+    padding: 1rem;
+  }
+
+  .dashboard-grid,
+  .two-column-grid,
+  .filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

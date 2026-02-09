@@ -1,0 +1,12 @@
+daemon:
+  command: "./backend/budgetapp"
+  workdir: "."
+  env:
+    DATA_FILE: "/Users/hal/projects/budgetapp/data/expenses.db"
+    PORT: "8081"
+  logs:
+    stdout: /Users/hal/projects/budgetapp/logs/stdout.log
+    stderr: /Users/hal/projects/budgetapp/logs/stderr.log
+
+deploy:
+  steps: []
